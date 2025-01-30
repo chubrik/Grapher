@@ -5,16 +5,11 @@ using static ValidationHelper;
 
 internal sealed class Axis
 {
-    private const int _expIndexLimit = 300;
-
     private readonly int _viewAreaSize;
     private readonly int _maxViewCoord;
-    private readonly int _minExpIndex;
-    private readonly int _maxExpIndex;
-    private readonly double _minViewValue;
-    private readonly double _maxViewValue;
-    private readonly double _minValueLimit;
-    private readonly double _maxValueLimit;
+    private readonly Data _currents;
+    private Data _defaults;
+    private readonly Data _limits;
 
     private readonly double _minLog;
     private readonly double _linear_MaxValue;
@@ -37,58 +32,38 @@ internal sealed class Axis
     public int MaxViewCoord => _maxViewCoord;
     public double MinCoord => _negInf_MinCoord;
     public double MaxCoord => _posInf_MaxCoord;
-    public int MinExpIndex => _minExpIndex;
-    public int MaxExpIndex => _maxExpIndex;
-    public double MinViewValue => _minViewValue;
-    public double MaxViewValue => _maxViewValue;
-    public double MinValueLimit => _minValueLimit;
-    public double MaxValueLimit => _maxValueLimit;
+    public double MinValueLimit => _limits.MinValue;
+    public double MaxValueLimit => _limits.MaxValue;
 
-    public Axis(
-        int viewAreaSize,
-        int minExpIndex,
-        int maxExpIndex,
-        double tryMinViewValue,
-        double tryMaxViewValue,
-        double minValueLimit,
-        double maxValueLimit)
+    private Axis(int viewAreaSize, Data currents, Data defaults, Data limits)
     {
         Check(viewAreaSize >= 2);
-        Check(minExpIndex >= -_expIndexLimit);
-        Check(maxExpIndex <= _expIndexLimit);
-        Check(minExpIndex <= maxExpIndex);
-        Check(tryMinViewValue < tryMaxViewValue);
-        Check(minValueLimit < maxValueLimit);
-
-        var minViewValue = Math.Max(tryMinViewValue, minValueLimit);
-        var maxViewValue = Math.Min(tryMaxViewValue, maxValueLimit);
+        Check(currents.IsInLimits(limits));
+        Check(defaults.IsInLimits(limits));
 
         _viewAreaSize = viewAreaSize;
         _maxViewCoord = viewAreaSize - 1;
-        _minExpIndex = minExpIndex;
-        _maxExpIndex = maxExpIndex;
-        _minViewValue = minViewValue;
-        _maxViewValue = maxViewValue;
-        _minValueLimit = minValueLimit;
-        _maxValueLimit = maxValueLimit;
+        _currents = currents;
+        _defaults = defaults;
+        _limits = limits;
 
-        var minExpValue = Math.Pow(10, minExpIndex);
-        var maxExpValue = Math.Pow(10, maxExpIndex);
+        var minExpValue = Math.Pow(10, _currents.MinExp);
+        var maxExpValue = Math.Pow(10, _currents.MaxExp);
 
-        _minLog = minExpIndex;
+        _minLog = _currents.MinExp;
         _linear_MaxValue = minExpValue;
         _exp_MaxValue = maxExpValue;
 
         // Pre Init
 
-        var eMulExpIndexDiff = Math.E * (maxExpIndex - minExpIndex);
+        var eMulExpDiff = Math.E * (_currents.MaxExp - _currents.MinExp);
 
-        _negInf_MinCoord = -2 - eMulExpIndexDiff;
-        _negExp_MinCoord = -1 - eMulExpIndexDiff;
+        _negInf_MinCoord = -2 - eMulExpDiff;
+        _negExp_MinCoord = -1 - eMulExpDiff;
         _linear_MinCoord = -1;
         _linear_MaxCoord = 1;
-        _posExp_MaxCoord = 1 + eMulExpIndexDiff;
-        _posInf_MaxCoord = 2 + eMulExpIndexDiff;
+        _posExp_MaxCoord = 1 + eMulExpDiff;
+        _posInf_MaxCoord = 2 + eMulExpDiff;
 
         _valueToCoord = 1 / minExpValue;
         _coordToValue = minExpValue;
@@ -98,8 +73,8 @@ internal sealed class Axis
 
         // Pre Calc
 
-        var preMinCoord = ValueToCoord_Private(minViewValue);
-        var preMaxCoord = ValueToCoord_Private(maxViewValue);
+        var preMinCoord = ValueToCoord_Private(_currents.MinValue);
+        var preMaxCoord = ValueToCoord_Private(_currents.MaxValue);
         Check(preMinCoord >= _negInf_MinCoord);
         Check(preMaxCoord <= _posInf_MaxCoord);
         Check(preMinCoord < preMaxCoord);
@@ -230,30 +205,104 @@ internal sealed class Axis
 
     #region Tools
 
-    public bool IsEqual(Axis other)
+    public bool Equals(Axis other)
     {
         if (_viewAreaSize != other._viewAreaSize) return false;
-        if (_minExpIndex != other._minExpIndex) return false;
-        if (_maxExpIndex != other._maxExpIndex) return false;
-        if (_minViewValue != other._minViewValue) return false;
-        if (_maxViewValue != other._maxViewValue) return false;
-        if (_minValueLimit != other._minValueLimit) return false;
-        if (_maxValueLimit != other._maxValueLimit) return false;
+        if (_currents != other._currents) return false;
+        if (_defaults != other._defaults) return false;
+        if (_limits != other._limits) return false;
         return true;
+    }
+
+    public static Axis FromViewAreaSize(int viewAreaSize)
+    {
+        const int defaultMinExp = 0;
+        const int defaultMaxExp = 6;
+        const int defaultAbsExpLimit = 300;
+
+        var currents = new Data(
+            minExp: defaultMinExp,
+            maxExp: defaultMaxExp,
+            minValue: double.NegativeInfinity,
+            maxValue: double.PositiveInfinity);
+
+        var defaults = currents;
+
+        var limits = new Data(
+            minExp: -defaultAbsExpLimit,
+            maxExp: defaultAbsExpLimit,
+            minValue: double.NegativeInfinity,
+            maxValue: double.PositiveInfinity);
+
+        return new Axis(
+            viewAreaSize: viewAreaSize,
+            currents: currents,
+            defaults: defaults,
+            limits: limits);
+    }
+
+    public Axis WithMeasures(Measures measures)
+    {
+        var minExp = _currents.MinExp;
+        var maxExp = _currents.MaxExp;
+        var minValue = _currents.MinValue;
+        var maxValue = _currents.MaxValue;
+        var minValueLimit = measures.MinValueLimit ?? _limits.MinValue;
+        var maxValueLimit = measures.MaxValueLimit ?? _limits.MaxValue;
+
+        if (measures.MinExp != null)
+            minExp = Math.Max(measures.MinExp.Value, _limits.MinExp);
+
+        if (measures.MaxExp != null)
+            maxExp = Math.Min(measures.MaxExp.Value, _limits.MaxExp);
+
+        if (measures.MinValue != null)
+            minValue = Math.Max(measures.MinValue.Value, minValueLimit);
+
+        if (measures.MaxValue != null)
+            maxValue = Math.Min(measures.MaxValue.Value, maxValueLimit);
+
+        var currents = new Data(
+            minExp: minExp,
+            maxExp: maxExp,
+            minValue: minValue,
+            maxValue: maxValue);
+
+        var defaults = currents;
+
+        var limits = new Data(
+            minExp: _limits.MinExp,
+            maxExp: _limits.MaxExp,
+            minValue: minValueLimit,
+            maxValue: maxValueLimit);
+
+        try
+        {
+            return new Axis(
+                viewAreaSize: _viewAreaSize,
+                currents: currents,
+                defaults: defaults,
+                limits: limits);
+        }
+        catch (Exception ex)
+        {
+            Debug.Fail(ex.Message);
+            return this;
+        }
     }
 
     public Axis WithViewAreaSize(int viewAreaSize)
     {
+        if (viewAreaSize == _viewAreaSize)
+            return this;
+
         try
         {
-            return new(
+            return new Axis(
                 viewAreaSize: viewAreaSize,
-                minExpIndex: _minExpIndex,
-                maxExpIndex: _maxExpIndex,
-                tryMinViewValue: _minViewValue,
-                tryMaxViewValue: _maxViewValue,
-                minValueLimit: _minValueLimit,
-                maxValueLimit: _maxValueLimit);
+                currents: _currents,
+                defaults: _defaults,
+                limits: _limits);
         }
         catch (Exception ex)
         {
@@ -264,11 +313,14 @@ internal sealed class Axis
 
     public Axis WithCoords(double tryMinCoord, double tryMaxCoord)
     {
+        if (tryMinCoord == 0 && tryMaxCoord == _maxViewCoord)
+            return this;
+
         var minCoord = tryMinCoord;
         var maxCoord = tryMaxCoord;
 
-        var minCoordLimit = _minValueLimit != double.NegativeInfinity ? ValueToCoord_Private(_minValueLimit) : _negInf_MinCoord;
-        var maxCoordLimit = _maxValueLimit != double.PositiveInfinity ? ValueToCoord_Private(_maxValueLimit) : _posInf_MaxCoord;
+        var minCoordLimit = _limits.MinValue != double.NegativeInfinity ? ValueToCoord_Private(_limits.MinValue) : _negInf_MinCoord;
+        var maxCoordLimit = _limits.MaxValue != double.PositiveInfinity ? ValueToCoord_Private(_limits.MaxValue) : _posInf_MaxCoord;
 
         if (tryMinCoord < minCoordLimit)
         {
@@ -284,16 +336,19 @@ internal sealed class Axis
         var minViewValue = CoordToValue(minCoord);
         var maxViewValue = CoordToValue(maxCoord);
 
+        var currents = new Data(
+            minExp: _currents.MinExp,
+            maxExp: _currents.MaxExp,
+            minValue: minViewValue,
+            maxValue: maxViewValue);
+
         try
         {
-            return new(
+            return new Axis(
                 viewAreaSize: _viewAreaSize,
-                minExpIndex: _minExpIndex,
-                maxExpIndex: _maxExpIndex,
-                tryMinViewValue: minViewValue,
-                tryMaxViewValue: maxViewValue,
-                minValueLimit: _minValueLimit,
-                maxValueLimit: _maxValueLimit);
+                currents: currents,
+                defaults: _defaults,
+                limits: _limits);
         }
         catch (Exception ex)
         {
@@ -304,47 +359,113 @@ internal sealed class Axis
 
     public Axis WithMinExp(int tryMinExpDiff)
     {
-        var minExp = _minExpIndex + tryMinExpDiff;
+        var minExp = _currents.MinExp + tryMinExpDiff;
 
-        if (Math.Abs(minExp) > _expIndexLimit)
+        if (minExp < _limits.MinExp)
             return this;
 
-        var maxExp = _maxExpIndex;
+        var maxExp = _currents.MaxExp;
 
         if (maxExp < minExp)
             maxExp = minExp;
 
-        return new(
+        var currents = new Data(
+            minExp: minExp,
+            maxExp: maxExp,
+            minValue: _currents.MinValue,
+            maxValue: _currents.MaxValue);
+
+        return new Axis(
             viewAreaSize: _viewAreaSize,
-            minExpIndex: minExp,
-            maxExpIndex: maxExp,
-            tryMinViewValue: _minViewValue,
-            tryMaxViewValue: _maxViewValue,
-            minValueLimit: _minValueLimit,
-            maxValueLimit: _maxValueLimit);
+            currents: currents,
+            defaults: _defaults,
+            limits: _limits);
     }
 
     public Axis WithMaxExp(int tryMaxExpDiff)
     {
-        var maxExp = _maxExpIndex + tryMaxExpDiff;
+        var maxExp = _currents.MaxExp + tryMaxExpDiff;
 
-        if (Math.Abs(maxExp) > _expIndexLimit)
+        if (maxExp > _limits.MaxExp)
             return this;
 
-        var minExp = _minExpIndex;
+        var minExp = _currents.MinExp;
 
         if (minExp > maxExp)
             minExp = maxExp;
 
-        return new(
+        var currents = new Data(
+            minExp: minExp,
+            maxExp: maxExp,
+            minValue: _currents.MinValue,
+            maxValue: _currents.MaxValue);
+
+        return new Axis(
             viewAreaSize: _viewAreaSize,
-            minExpIndex: minExp,
-            maxExpIndex: maxExp,
-            tryMinViewValue: _minViewValue,
-            tryMaxViewValue: _maxViewValue,
-            minValueLimit: _minValueLimit,
-            maxValueLimit: _maxValueLimit);
+            currents: currents,
+            defaults: _defaults,
+            limits: _limits);
+    }
+
+    public void SetAsDefaults()
+    {
+        _defaults = _currents;
+    }
+
+    public Axis WithDefaults()
+    {
+        if (_currents == _defaults)
+            return this;
+
+        var currents = _defaults;
+
+        return new Axis(
+            viewAreaSize: _viewAreaSize,
+            currents: currents,
+            defaults: _defaults,
+            limits: _limits);
     }
 
     #endregion
+
+    public readonly struct Data
+    {
+        public readonly int MinExp;
+        public readonly int MaxExp;
+        public readonly double MinValue;
+        public readonly double MaxValue;
+
+        public Data(int minExp, int maxExp, double minValue, double maxValue)
+        {
+            Check(minExp <= maxExp);
+            Check(minValue < maxValue);
+
+            MinExp = minExp;
+            MaxExp = maxExp;
+            MinValue = minValue;
+            MaxValue = maxValue;
+        }
+
+        public bool IsInLimits(Data limits)
+        {
+            if (MinExp < limits.MinExp) return false;
+            if (MaxExp > limits.MaxExp) return false;
+            if (MinValue < limits.MinValue) return false;
+            if (MaxValue > limits.MaxValue) return false;
+            return true;
+        }
+
+        public static bool operator ==(Data left, Data right)
+        {
+            if (left.MinExp != right.MinExp) return false;
+            if (left.MaxExp != right.MaxExp) return false;
+            if (left.MinValue != right.MinValue) return false;
+            if (left.MaxValue != right.MaxValue) return false;
+            return true;
+        }
+
+        public static bool operator !=(Data left, Data right) => !(left == right);
+        public override bool Equals(object? obj) => obj is Data data && this == data;
+        public override int GetHashCode() => HashCode.Combine(MinExp, MaxExp, MinValue, MaxValue);
+    }
 }

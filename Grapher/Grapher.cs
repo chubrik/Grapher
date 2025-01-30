@@ -9,40 +9,14 @@ using static ValidationHelper;
 public sealed class Grapher
 {
     private RenderCtx _renderCtx;
-    private Axis _x;
-    private Axis _y;
-
-    private double _defaultMinIn = double.NegativeInfinity;
-    private double _defaultMaxIn = double.PositiveInfinity;
-    private double _defaultMinOut = double.NegativeInfinity;
-    private double _defaultMaxOut = double.PositiveInfinity;
-    private int _defaultMinInExpIndex = 0;
-    private int _defaultMaxInExpIndex = 6;
-    private int _defaultMinOutExpIndex = 0;
-    private int _defaultMaxOutExpIndex = 6;
+    private Axis _axisX;
+    private Axis _axisY;
 
     public Grapher(PictureBox pictureBox)
     {
         _renderCtx = new RenderCtx(pictureBox);
-
-        _x = new Axis(
-            viewAreaSize: _renderCtx.ViewAreaWidth,
-            minExpIndex: _defaultMinInExpIndex,
-            maxExpIndex: _defaultMaxInExpIndex,
-            tryMinViewValue: _defaultMinIn,
-            tryMaxViewValue: _defaultMaxIn,
-            minValueLimit: double.NegativeInfinity,
-            maxValueLimit: double.PositiveInfinity);
-
-        _y = new Axis(
-            viewAreaSize: _renderCtx.ViewAreaHeight,
-            minExpIndex: _defaultMinOutExpIndex,
-            maxExpIndex: _defaultMaxOutExpIndex,
-            tryMinViewValue: _defaultMinOut,
-            tryMaxViewValue: _defaultMaxOut,
-            minValueLimit: double.NegativeInfinity,
-            maxValueLimit: double.PositiveInfinity);
-
+        _axisX = Axis.FromViewAreaSize(_renderCtx.ViewAreaWidth);
+        _axisY = Axis.FromViewAreaSize(_renderCtx.ViewAreaHeight);
         InitRulers();
     }
 
@@ -61,42 +35,8 @@ public sealed class Grapher
         var measuresY = new Measures();
         onMeasures(measuresX, measuresY);
 
-        if (measuresX.MinExpIndex != null) _defaultMinInExpIndex = measuresX.MinExpIndex.Value;
-        if (measuresX.MaxExpIndex != null) _defaultMaxInExpIndex = measuresX.MaxExpIndex.Value;
-        if (measuresX.MinValue != null) _defaultMinIn = measuresX.MinValue.Value;
-        if (measuresX.MaxValue != null) _defaultMaxIn = measuresX.MaxValue.Value;
-
-        var newX = new Axis(
-            viewAreaSize: _x.ViewAreaSize,
-            minExpIndex: _defaultMinInExpIndex,
-            maxExpIndex: _defaultMaxInExpIndex,
-            tryMinViewValue: _defaultMinIn,
-            tryMaxViewValue: _defaultMaxIn,
-            minValueLimit: measuresX.MinValueLimit ?? _x.MinValueLimit,
-            maxValueLimit: measuresX.MaxValueLimit ?? _x.MaxValueLimit);
-
-        if (measuresY.MinExpIndex != null) _defaultMinOutExpIndex = measuresY.MinExpIndex.Value;
-        if (measuresY.MaxExpIndex != null) _defaultMaxOutExpIndex = measuresY.MaxExpIndex.Value;
-        if (measuresY.MinValue != null) _defaultMinOut = measuresY.MinValue.Value;
-        if (measuresY.MaxValue != null) _defaultMaxOut = measuresY.MaxValue.Value;
-
-        var newY = new Axis(
-            viewAreaSize: _y.ViewAreaSize,
-            minExpIndex: _defaultMinOutExpIndex,
-            maxExpIndex: _defaultMaxOutExpIndex,
-            tryMinViewValue: _defaultMinOut,
-            tryMaxViewValue: _defaultMaxOut,
-            minValueLimit: measuresY.MinValueLimit ?? _y.MinValueLimit,
-            maxValueLimit: measuresY.MaxValueLimit ?? _y.MaxValueLimit);
-
-        var isXChanged = !_x.IsEqual(newX);
-        var isYChanged = !_y.IsEqual(newY);
-
-        if (isXChanged)
-            SetX(newX);
-
-        if (isYChanged)
-            SetY(newY);
+        SetX(_axisX.WithMeasures(measuresX));
+        SetY(_axisY.WithMeasures(measuresY));
     }
 
     private void Render()
@@ -124,59 +64,23 @@ public sealed class Grapher
 
     public void OnResize()
     {
-        var isWidthChanged = _renderCtx.IsWidthChanged;
-        var isHeightChanged = _renderCtx.IsHeightChanged;
+        var isXChanged = SetX(_axisX.WithViewAreaSize(_renderCtx.ViewAreaWidth));
+        var isYChanged = SetY(_axisY.WithViewAreaSize(_renderCtx.ViewAreaHeight));
 
-        if (isWidthChanged)
-            SetX(_x.WithViewAreaSize(_renderCtx.ViewAreaWidth));
-
-        if (isHeightChanged)
-            SetY(_y.WithViewAreaSize(_renderCtx.ViewAreaHeight));
-
-        if (isWidthChanged || isHeightChanged)
+        if (isXChanged || isYChanged)
             Render();
     }
 
     public void OnSetAsDefault()
     {
-        _defaultMinIn = _x.MinViewValue;
-        _defaultMaxIn = _x.MaxViewValue;
-        _defaultMinOut = _y.MinViewValue;
-        _defaultMaxOut = _y.MaxViewValue;
-        _defaultMinInExpIndex = _x.MinExpIndex;
-        _defaultMaxInExpIndex = _x.MaxExpIndex;
-        _defaultMinOutExpIndex = _y.MinExpIndex;
-        _defaultMaxOutExpIndex = _y.MaxExpIndex;
+        _axisX.SetAsDefaults();
+        _axisY.SetAsDefaults();
     }
 
     public void OnReset()
     {
-        var newX = new Axis(
-            viewAreaSize: _x.ViewAreaSize,
-            minExpIndex: _defaultMinInExpIndex,
-            maxExpIndex: _defaultMaxInExpIndex,
-            tryMinViewValue: _defaultMinIn,
-            tryMaxViewValue: _defaultMaxIn,
-            minValueLimit: _x.MinValueLimit,
-            maxValueLimit: _x.MaxValueLimit);
-
-        var newY = new Axis(
-            viewAreaSize: _y.ViewAreaSize,
-            minExpIndex: _defaultMinOutExpIndex,
-            maxExpIndex: _defaultMaxOutExpIndex,
-            tryMinViewValue: _defaultMinOut,
-            tryMaxViewValue: _defaultMaxOut,
-            minValueLimit: _y.MinValueLimit,
-            maxValueLimit: _y.MaxValueLimit);
-
-        var isXChanged = !_x.IsEqual(newX);
-        var isYChanged = !_y.IsEqual(newY);
-
-        if (isXChanged)
-            SetX(newX);
-
-        if (isYChanged)
-            SetY(newY);
+        var isXChanged = SetX(_axisX.WithDefaults());
+        var isYChanged = SetY(_axisY.WithDefaults());
 
         if (isXChanged || isYChanged)
             Render();
@@ -188,57 +92,57 @@ public sealed class Grapher
             ? 1 / (smooth ? _zoomSmoothFactor : _zoomFactor)
             : smooth ? _zoomSmoothFactor : _zoomFactor;
 
-        var isXChanged = rawX != null && (zoomIn || _x.MinCoord < 0 || _x.MaxCoord > _x.MaxViewCoord);
-        var isYChanged = rawY != null && (zoomIn || _y.MinCoord < 0 || _y.MaxCoord > _y.MaxViewCoord);
+        var isXChanged = rawX != null && (zoomIn || _axisX.MinCoord < 0 || _axisX.MaxCoord > _axisX.MaxViewCoord);
+        var isYChanged = rawY != null && (zoomIn || _axisY.MinCoord < 0 || _axisY.MaxCoord > _axisY.MaxViewCoord);
 
         if (isXChanged)
         {
-            var position = _renderCtx.RawToX(NotNull(rawX)) / (double)_x.MaxViewCoord;
+            var position = _renderCtx.RawToX(NotNull(rawX)) / (double)_axisX.MaxViewCoord;
             if (position < 0) position = 0;
             if (position > 1) position = 1;
-            var newMaxViewX = _x.MaxViewCoord * zoomFactor;
-            var newMinX = (_x.MaxViewCoord - newMaxViewX) * position;
+            var newMaxViewX = _axisX.MaxViewCoord * zoomFactor;
+            var newMinX = (_axisX.MaxViewCoord - newMaxViewX) * position;
             var newMaxX = newMinX + newMaxViewX;
-            SetX(_x.WithCoords(newMinX, newMaxX));
+            isXChanged = SetX(_axisX.WithCoords(newMinX, newMaxX));
         }
 
         if (isYChanged)
         {
-            var position = _renderCtx.RawToY(NotNull(rawY)) / (double)_y.MaxViewCoord;
+            var position = _renderCtx.RawToY(NotNull(rawY)) / (double)_axisY.MaxViewCoord;
             if (position < 0) position = 0;
             if (position > 1) position = 1;
-            var newMaxViewY = _y.MaxViewCoord * zoomFactor;
-            var newMinY = (_y.MaxViewCoord - newMaxViewY) * position;
+            var newMaxViewY = _axisY.MaxViewCoord * zoomFactor;
+            var newMinY = (_axisY.MaxViewCoord - newMaxViewY) * position;
             var newMaxY = newMinY + newMaxViewY;
-            SetY(_y.WithCoords(newMinY, newMaxY));
+            isYChanged = SetY(_axisY.WithCoords(newMinY, newMaxY));
         }
 
         if (isXChanged || isYChanged)
             Render();
     }
 
-    public void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_x.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
-    public void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_x.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
-    public void OnMoveUp(bool smooth) => OnMove(rawXDiff: 0, (int)Math.Round(_y.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
-    public void OnMoveDown(bool smooth) => OnMove(rawXDiff: 0, -(int)Math.Round(_y.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    public void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
+    public void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
+    public void OnMoveUp(bool smooth) => OnMove(rawXDiff: 0, (int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    public void OnMoveDown(bool smooth) => OnMove(rawXDiff: 0, -(int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
 
     public void OnMove(int rawXDiff, int rawYDiff)
     {
-        var isXChanged = rawXDiff != 0 && ((rawXDiff > 0 && _x.MinCoord < 0) || (rawXDiff < 0 && _x.MaxCoord > _x.MaxViewCoord));
-        var isYChanged = rawYDiff != 0 && ((rawYDiff < 0 && _y.MinCoord < 0) || (rawYDiff > 0 && _y.MaxCoord > _y.MaxViewCoord));
+        var isXChanged = rawXDiff != 0 && ((rawXDiff > 0 && _axisX.MinCoord < 0) || (rawXDiff < 0 && _axisX.MaxCoord > _axisX.MaxViewCoord));
+        var isYChanged = rawYDiff != 0 && ((rawYDiff < 0 && _axisY.MinCoord < 0) || (rawYDiff > 0 && _axisY.MaxCoord > _axisY.MaxViewCoord));
 
         if (isXChanged)
         {
             var minX = -rawXDiff;
-            var maxX = _x.MaxViewCoord - rawXDiff;
-            SetX(_x.WithCoords(minX, maxX));
+            var maxX = _axisX.MaxViewCoord - rawXDiff;
+            isXChanged = SetX(_axisX.WithCoords(minX, maxX));
         }
 
         if (isYChanged)
         {
             var minY = rawYDiff;
-            var maxY = _y.MaxViewCoord + rawYDiff;
-            SetY(_y.WithCoords(minY, maxY));
+            var maxY = _axisY.MaxViewCoord + rawYDiff;
+            isYChanged = SetY(_axisY.WithCoords(minY, maxY));
         }
 
         if (isXChanged || isYChanged)
@@ -257,9 +161,12 @@ public sealed class Grapher
         var maxX = _renderCtx.RawToX(rawMaxX);
         var minY = _renderCtx.RawToY(rawMaxY);
         var maxY = _renderCtx.RawToY(rawMinY);
-        SetX(_x.WithCoords(minX, maxX));
-        SetY(_y.WithCoords(minY, maxY));
-        Render();
+
+        var isXChanged = SetX(_axisX.WithCoords(minX, maxX));
+        var isYChanged = SetY(_axisY.WithCoords(minY, maxY));
+
+        if (isXChanged || isYChanged)
+            Render();
     }
 
     public void OnMinExp(int xDiff, int yDiff)
@@ -267,28 +174,8 @@ public sealed class Grapher
         Check(xDiff >= -1 && xDiff <= 1);
         Check(yDiff >= -1 && yDiff <= 1);
 
-        var isXChanged = xDiff != 0;
-        var isYChanged = yDiff != 0;
-
-        if (isXChanged)
-        {
-            var newX = _x.WithMinExp(xDiff);
-
-            if (!_x.IsEqual(newX))
-                SetX(newX);
-            else
-                isXChanged = false;
-        }
-
-        if (isYChanged)
-        {
-            var newY = _y.WithMinExp(yDiff);
-
-            if (!_y.IsEqual(newY))
-                SetY(newY);
-            else
-                isYChanged = false;
-        }
+        var isXChanged = xDiff != 0 && SetX(_axisX.WithMinExp(xDiff));
+        var isYChanged = yDiff != 0 && SetY(_axisY.WithMinExp(yDiff));
 
         if (isXChanged || isYChanged)
             Render();
@@ -299,28 +186,8 @@ public sealed class Grapher
         Check(xDiff >= -1 && xDiff <= 1);
         Check(yDiff >= -1 && yDiff <= 1);
 
-        var isXChanged = xDiff != 0;
-        var isYChanged = yDiff != 0;
-
-        if (isXChanged)
-        {
-            var newX = _x.WithMaxExp(xDiff);
-
-            if (!_x.IsEqual(newX))
-                SetX(newX);
-            else
-                isXChanged = false;
-        }
-
-        if (isYChanged)
-        {
-            var newY = _y.WithMaxExp(yDiff);
-
-            if (!_y.IsEqual(newY))
-                SetY(newY);
-            else
-                isYChanged = false;
-        }
+        var isXChanged = xDiff != 0 && SetX(_axisX.WithMaxExp(xDiff));
+        var isYChanged = yDiff != 0 && SetY(_axisY.WithMaxExp(yDiff));
 
         if (isXChanged || isYChanged)
             Render();
@@ -350,20 +217,24 @@ public sealed class Grapher
 
         var borderColor = _rulerColors[0];
         RenderXRuler(0, borderColor);
-        RenderXRuler(_x.MaxViewCoord, borderColor);
+        RenderXRuler(_axisX.MaxViewCoord, borderColor);
         RenderYRuler(0, borderColor);
-        RenderYRuler(_y.MaxViewCoord, borderColor);
+        RenderYRuler(_axisY.MaxViewCoord, borderColor);
     }
 
     private void RenderXRuler(int x, Color color)
     {
-        for (var y = 2; y <= _y.MaxViewCoord - 2; y += 2)
+        var y = x % 2 == 0 ? 2 : 1;
+
+        for (; y < _axisY.MaxViewCoord; y += 2)
             _renderCtx.SetPixel(x, y, color);
     }
 
     private void RenderYRuler(int y, Color color)
     {
-        for (var x = 0; x <= _x.MaxViewCoord; x += 2)
+        var x = y % 2 == 0 ? 0 : 1;
+
+        for (; x <= _axisX.MaxViewCoord; x += 2)
             _renderCtx.SetPixel(x, y, color);
     }
 
@@ -430,7 +301,7 @@ public sealed class Grapher
 
             if (!double.IsNaN(@out))
             {
-                var y = _y.ValueToCoord(@out);
+                var y = _axisY.ValueToCoord(@out);
 
                 if (y != null)
                 {
@@ -447,8 +318,8 @@ public sealed class Grapher
 
     private void RenderGraphPoint(int x, int y, Color color, int prevX, int prevY, Color ligaColor)
     {
-        Debug.Assert(x >= -1 && x <= _x.MaxViewCoord);
-        Debug.Assert(y >= -1 && y <= _y.MaxViewCoord);
+        Debug.Assert(x >= 0 && x <= _axisX.MaxViewCoord);
+        Debug.Assert(y >= 0 && y <= _axisY.MaxViewCoord);
         _renderCtx.SetPixel(x, y, color);
 
         // Liga
@@ -497,27 +368,35 @@ public sealed class Grapher
     private int _insVersion = 0;
     private double[] _ins = [];
 
-    private void SetX(Axis xAxis)
+    private bool SetX(Axis axisX)
     {
-        _x = xAxis;
+        if (axisX.Equals(_axisX))
+            return false;
 
+        _axisX = axisX;
         _insVersion++;
 
-        if (_ins.Length != _x.ViewAreaSize)
-            _ins = new double[_x.ViewAreaSize];
+        if (_ins.Length != _axisX.ViewAreaSize)
+            _ins = new double[_axisX.ViewAreaSize];
 
         for (var x = 0; x < _ins.Length; x++)
         {
-            var @in = _x.CoordToValue(x);
-            if (@in < _x.MinValueLimit) @in = _x.MinValueLimit;
-            if (@in > _x.MaxValueLimit) @in = _x.MaxValueLimit;
+            var @in = _axisX.CoordToValue(x);
+            if (@in < _axisX.MinValueLimit) @in = _axisX.MinValueLimit;
+            if (@in > _axisX.MaxValueLimit) @in = _axisX.MaxValueLimit;
             _ins[x] = @in;
         }
+
+        return true;
     }
 
-    private void SetY(Axis yAxis)
+    private bool SetY(Axis axisX)
     {
-        _y = yAxis;
+        if (axisX.Equals(_axisY))
+            return false;
+
+        _axisY = axisX;
+        return true;
     }
 
     #endregion
@@ -532,8 +411,6 @@ public sealed class Grapher
         public int RawMaxX => pictureBox.Width - _paddingSize - 1;
         public int RawMinY => _paddingSize;
         public int RawMaxY => _rawMaxY;
-        public bool IsWidthChanged => pictureBox.Width != _bitmap.Width;
-        public bool IsHeightChanged => pictureBox.Height != _bitmap.Height;
         public int ViewAreaWidth => pictureBox.Width - _paddingSize * 2;
         public int ViewAreaHeight => pictureBox.Height - _paddingSize * 2;
 
