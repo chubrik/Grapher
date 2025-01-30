@@ -8,18 +8,43 @@ using static ValidationHelper;
 
 public sealed class Grapher
 {
-    private const int _paddingSize = 10;
-    private readonly PictureBox _pictureBox;
-    private int _pictureBoxWidth;
-    private int _pictureBoxHeight;
-    private int _viewAreaWidth;
-    private int _viewAreaHeight;
-    private int _viewAreaMaxX;
-    private int _viewAreaMaxY;
-    private Bitmap _bitmap;
-    private int _bitmapMaxY;
-    private Axis _x = Axis.Default;
-    private Axis _y = Axis.Default;
+    private RenderCtx _renderCtx;
+    private Axis _x;
+    private Axis _y;
+
+    private double _defaultMinIn = double.NegativeInfinity;
+    private double _defaultMaxIn = double.PositiveInfinity;
+    private double _defaultMinOut = double.NegativeInfinity;
+    private double _defaultMaxOut = double.PositiveInfinity;
+    private int _defaultMinInExpIndex = 0;
+    private int _defaultMaxInExpIndex = 6;
+    private int _defaultMinOutExpIndex = 0;
+    private int _defaultMaxOutExpIndex = 6;
+
+    public Grapher(PictureBox pictureBox)
+    {
+        _renderCtx = new RenderCtx(pictureBox);
+
+        _x = new Axis(
+            viewAreaSize: _renderCtx.ViewAreaWidth,
+            minExpIndex: _defaultMinInExpIndex,
+            maxExpIndex: _defaultMaxInExpIndex,
+            tryMinViewValue: _defaultMinIn,
+            tryMaxViewValue: _defaultMaxIn,
+            minValueLimit: double.NegativeInfinity,
+            maxValueLimit: double.PositiveInfinity);
+
+        _y = new Axis(
+            viewAreaSize: _renderCtx.ViewAreaHeight,
+            minExpIndex: _defaultMinOutExpIndex,
+            maxExpIndex: _defaultMaxOutExpIndex,
+            tryMinViewValue: _defaultMinOut,
+            tryMaxViewValue: _defaultMaxOut,
+            minValueLimit: double.NegativeInfinity,
+            maxValueLimit: double.PositiveInfinity);
+
+        InitRulers();
+    }
 
     public static void Run(Action<Grapher> onGrapher)
     {
@@ -29,29 +54,6 @@ public sealed class Grapher
         var form = new Form(onGrapher);
         Application.Run(form);
     }
-
-    public Grapher(PictureBox pictureBox)
-    {
-        _pictureBox = pictureBox;
-        _pictureBox.Image = _bitmap = new Bitmap(_pictureBox.Width, _pictureBox.Height);
-        _pictureBoxWidth = _pictureBox.Width;
-        _pictureBoxHeight = _pictureBox.Height;
-        _viewAreaWidth = _pictureBoxWidth - _paddingSize * 2;
-        _viewAreaHeight = _pictureBoxHeight - _paddingSize * 2;
-        _viewAreaMaxX = _viewAreaWidth - 1;
-        _viewAreaMaxY = _viewAreaHeight - 1;
-        _bitmapMaxY = _pictureBoxHeight - _paddingSize - 1;
-        InitRulers();
-    }
-
-    private double _defaultMinIn = Axis.Default.MinViewValue;
-    private double _defaultMaxIn = Axis.Default.MaxViewValue;
-    private double _defaultMinOut = Axis.Default.MinViewValue;
-    private double _defaultMaxOut = Axis.Default.MaxViewValue;
-    private int _defaultMinInExpIndex = Axis.Default.MinExpIndex;
-    private int _defaultMaxInExpIndex = Axis.Default.MaxExpIndex;
-    private int _defaultMinOutExpIndex = Axis.Default.MinExpIndex;
-    private int _defaultMaxOutExpIndex = Axis.Default.MaxExpIndex;
 
     public void SetMeasures(Action<Measures, Measures> onMeasures)
     {
@@ -65,7 +67,7 @@ public sealed class Grapher
         if (measuresX.MaxValue != null) _defaultMaxIn = measuresX.MaxValue.Value;
 
         var newX = new Axis(
-            viewAreaSize: _viewAreaWidth,
+            viewAreaSize: _x.ViewAreaSize,
             minExpIndex: _defaultMinInExpIndex,
             maxExpIndex: _defaultMaxInExpIndex,
             tryMinViewValue: _defaultMinIn,
@@ -79,7 +81,7 @@ public sealed class Grapher
         if (measuresY.MaxValue != null) _defaultMaxOut = measuresY.MaxValue.Value;
 
         var newY = new Axis(
-            viewAreaSize: _viewAreaHeight,
+            viewAreaSize: _y.ViewAreaSize,
             minExpIndex: _defaultMinOutExpIndex,
             maxExpIndex: _defaultMaxOutExpIndex,
             tryMinViewValue: _defaultMinOut,
@@ -99,7 +101,8 @@ public sealed class Grapher
 
     private void Render()
     {
-        _bitmap = new Bitmap(_pictureBox.Width, _pictureBox.Height);
+        _renderCtx = _renderCtx.GetNew();
+
         RenderRulers();
 
         foreach (var graphJob in _graphJobs)
@@ -108,8 +111,7 @@ public sealed class Grapher
         foreach (var (color, markers) in _markerJobs)
             RenderMarker(color, markers);
 
-        NotNull(_pictureBox.Image).Dispose();
-        _pictureBox.Image = _bitmap;
+        _renderCtx.Apply();
     }
 
     #region Navigation
@@ -122,25 +124,14 @@ public sealed class Grapher
 
     public void OnResize()
     {
-        var isWidthChanged = _pictureBox.Width != _pictureBoxWidth;
-        var isHeightChanged = _pictureBox.Height != _pictureBoxHeight;
+        var isWidthChanged = _renderCtx.IsWidthChanged;
+        var isHeightChanged = _renderCtx.IsHeightChanged;
 
         if (isWidthChanged)
-        {
-            _pictureBoxWidth = _pictureBox.Width;
-            _viewAreaWidth = _pictureBoxWidth - _paddingSize * 2;
-            _viewAreaMaxX = _viewAreaWidth - 1;
-            SetX(_x.WithViewAreaSize(_viewAreaWidth));
-        }
+            SetX(_x.WithViewAreaSize(_renderCtx.ViewAreaWidth));
 
         if (isHeightChanged)
-        {
-            _pictureBoxHeight = _pictureBox.Height;
-            _viewAreaHeight = _pictureBoxHeight - _paddingSize * 2;
-            _viewAreaMaxY = _viewAreaHeight - 1;
-            _bitmapMaxY = _pictureBoxHeight - _paddingSize - 1;
-            SetY(_y.WithViewAreaSize(_viewAreaHeight));
-        }
+            SetY(_y.WithViewAreaSize(_renderCtx.ViewAreaHeight));
 
         if (isWidthChanged || isHeightChanged)
             Render();
@@ -161,7 +152,7 @@ public sealed class Grapher
     public void OnReset()
     {
         var newX = new Axis(
-            viewAreaSize: _viewAreaWidth,
+            viewAreaSize: _x.ViewAreaSize,
             minExpIndex: _defaultMinInExpIndex,
             maxExpIndex: _defaultMaxInExpIndex,
             tryMinViewValue: _defaultMinIn,
@@ -170,7 +161,7 @@ public sealed class Grapher
             maxValueLimit: _x.MaxValueLimit);
 
         var newY = new Axis(
-            viewAreaSize: _viewAreaHeight,
+            viewAreaSize: _y.ViewAreaSize,
             minExpIndex: _defaultMinOutExpIndex,
             maxExpIndex: _defaultMaxOutExpIndex,
             tryMinViewValue: _defaultMinOut,
@@ -193,89 +184,81 @@ public sealed class Grapher
 
     public void OnZoom(bool smooth, bool zoomIn, int? rawX, int? rawY)
     {
-        var x = rawX == -1 ? (double)_pictureBoxWidth / 2 : (double?)rawX;
-        var y = rawY == -1 ? (double)_pictureBoxHeight / 2 : (double?)rawY;
-
         var zoomFactor = zoomIn
             ? 1 / (smooth ? _zoomSmoothFactor : _zoomFactor)
             : smooth ? _zoomSmoothFactor : _zoomFactor;
 
-        var isXChanged = x != null && (zoomIn || _x.MinCoord < 0 || _x.MaxCoord > _viewAreaMaxX);
-        var isYChanged = y != null && (zoomIn || _y.MinCoord < 0 || _y.MaxCoord > _viewAreaMaxY);
+        var isXChanged = rawX != null && (zoomIn || _x.MinCoord < 0 || _x.MaxCoord > _x.MaxViewCoord);
+        var isYChanged = rawY != null && (zoomIn || _y.MinCoord < 0 || _y.MaxCoord > _y.MaxViewCoord);
 
         if (isXChanged)
         {
-            var position = (NotNull(x) - _paddingSize) / _viewAreaMaxX;
+            var position = _renderCtx.RawToX(NotNull(rawX)) / (double)_x.MaxViewCoord;
             if (position < 0) position = 0;
             if (position > 1) position = 1;
-            var newViewAreaMaxX = _viewAreaMaxX * zoomFactor;
-            var newMinCoord = (_viewAreaMaxX - newViewAreaMaxX) * position;
-            var newMaxCoord = newMinCoord + newViewAreaMaxX;
-            SetX(_x.WithCoords(newMinCoord, newMaxCoord));
+            var newMaxViewX = _x.MaxViewCoord * zoomFactor;
+            var newMinX = (_x.MaxViewCoord - newMaxViewX) * position;
+            var newMaxX = newMinX + newMaxViewX;
+            SetX(_x.WithCoords(newMinX, newMaxX));
         }
 
         if (isYChanged)
         {
-            var position = 1 - (NotNull(y) - _paddingSize) / _viewAreaMaxY;
+            var position = _renderCtx.RawToY(NotNull(rawY)) / (double)_y.MaxViewCoord;
             if (position < 0) position = 0;
             if (position > 1) position = 1;
-            var newViewAreaMaxY = _viewAreaMaxY * zoomFactor;
-            var newMinCoord = (_viewAreaMaxY - newViewAreaMaxY) * position;
-            var newMaxCoord = newMinCoord + newViewAreaMaxY;
-            SetY(_y.WithCoords(newMinCoord, newMaxCoord));
+            var newMaxViewY = _y.MaxViewCoord * zoomFactor;
+            var newMinY = (_y.MaxViewCoord - newMaxViewY) * position;
+            var newMaxY = newMinY + newMaxViewY;
+            SetY(_y.WithCoords(newMinY, newMaxY));
         }
 
         if (isXChanged || isYChanged)
             Render();
     }
 
-    public void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_viewAreaMaxX * (smooth ? _moveSmoothFactor : _moveFactor)), moveY: 0);
-    public void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_viewAreaMaxX * (smooth ? _moveSmoothFactor : _moveFactor)), moveY: 0);
-    public void OnMoveUp(bool smooth) => OnMove(moveX: 0, (int)Math.Round(_viewAreaMaxY * (smooth ? _moveSmoothFactor : _moveFactor)));
-    public void OnMoveDown(bool smooth) => OnMove(moveX: 0, -(int)Math.Round(_viewAreaMaxY * (smooth ? _moveSmoothFactor : _moveFactor)));
+    public void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_x.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
+    public void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_x.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
+    public void OnMoveUp(bool smooth) => OnMove(rawXDiff: 0, (int)Math.Round(_y.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    public void OnMoveDown(bool smooth) => OnMove(rawXDiff: 0, -(int)Math.Round(_y.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
 
-    public void OnMove(int moveX, int moveY)
+    public void OnMove(int rawXDiff, int rawYDiff)
     {
-        var isXChanged = moveX != 0 && ((moveX > 0 && _x.MinCoord < 0) || (moveX < 0 && _x.MaxCoord > _viewAreaMaxX));
-        var isYChanged = moveY != 0 && ((moveY < 0 && _y.MinCoord < 0) || (moveY > 0 && _y.MaxCoord > _viewAreaMaxY));
+        var isXChanged = rawXDiff != 0 && ((rawXDiff > 0 && _x.MinCoord < 0) || (rawXDiff < 0 && _x.MaxCoord > _x.MaxViewCoord));
+        var isYChanged = rawYDiff != 0 && ((rawYDiff < 0 && _y.MinCoord < 0) || (rawYDiff > 0 && _y.MaxCoord > _y.MaxViewCoord));
 
         if (isXChanged)
         {
-            var newMinCoord = -moveX;
-            var newMaxCoord = -moveX + _viewAreaMaxX;
-            SetX(_x.WithCoords(newMinCoord, newMaxCoord));
+            var minX = -rawXDiff;
+            var maxX = _x.MaxViewCoord - rawXDiff;
+            SetX(_x.WithCoords(minX, maxX));
         }
 
         if (isYChanged)
         {
-            var newMinCoord = moveY;
-            var newMaxCoord = moveY + _viewAreaMaxY;
-            SetY(_y.WithCoords(newMinCoord, newMaxCoord));
+            var minY = rawYDiff;
+            var maxY = _y.MaxViewCoord + rawYDiff;
+            SetY(_y.WithCoords(minY, maxY));
         }
 
         if (isXChanged || isYChanged)
             Render();
     }
 
-    public void OnRangeX(int minX, int maxX) => OnRange(minX, maxX, _paddingSize, _paddingSize + _viewAreaMaxX);
-    public void OnRangeY(int minY, int maxY) => OnRange(_paddingSize, _paddingSize + _viewAreaMaxY, minY, maxY);
+    public void OnRangeX(int rawMinX, int rawMaxX) => OnRange(rawMinX, rawMaxX, _renderCtx.RawMinY, _renderCtx.RawMaxY);
+    public void OnRangeY(int rawMinY, int rawMaxY) => OnRange(_renderCtx.RawMinX, _renderCtx.RawMaxX, rawMinY, rawMaxY);
 
-    public void OnRange(int minX, int maxX, int minY, int maxY)
+    public void OnRange(int rawMinX, int rawMaxX, int rawMinY, int rawMaxY)
     {
-        if (minX == maxX || minY == maxY)
+        if (rawMinX == rawMaxX || rawMinY == rawMaxY)
             return;
 
-        {
-            var newMinCoord = minX - _paddingSize;
-            var newMaxCoord = maxX - _paddingSize;
-            SetX(_x.WithCoords(newMinCoord, newMaxCoord));
-        }
-        {
-            var newMinCoord = _bitmapMaxY - maxY;
-            var newMaxCoord = _bitmapMaxY - minY;
-            SetY(_y.WithCoords(newMinCoord, newMaxCoord));
-        }
-
+        var minX = _renderCtx.RawToX(rawMinX);
+        var maxX = _renderCtx.RawToX(rawMaxX);
+        var minY = _renderCtx.RawToY(rawMaxY);
+        var maxY = _renderCtx.RawToY(rawMinY);
+        SetX(_x.WithCoords(minX, maxX));
+        SetY(_y.WithCoords(minY, maxY));
         Render();
     }
 
@@ -367,21 +350,21 @@ public sealed class Grapher
 
         var borderColor = _rulerColors[0];
         RenderXRuler(0, borderColor);
-        RenderXRuler(_viewAreaMaxX, borderColor);
+        RenderXRuler(_x.MaxViewCoord, borderColor);
         RenderYRuler(0, borderColor);
-        RenderYRuler(_viewAreaMaxY, borderColor);
+        RenderYRuler(_y.MaxViewCoord, borderColor);
     }
 
     private void RenderXRuler(int x, Color color)
     {
-        for (var y = 2; y <= _viewAreaMaxY - 2; y += 2)
-            SetPixel(x, y, color);
+        for (var y = 2; y <= _y.MaxViewCoord - 2; y += 2)
+            _renderCtx.SetPixel(x, y, color);
     }
 
     private void RenderYRuler(int y, Color color)
     {
-        for (var x = 0; x <= _viewAreaMaxX; x += 2)
-            SetPixel(x, y, color);
+        for (var x = 0; x <= _x.MaxViewCoord; x += 2)
+            _renderCtx.SetPixel(x, y, color);
     }
 
     #endregion
@@ -464,9 +447,9 @@ public sealed class Grapher
 
     private void RenderGraphPoint(int x, int y, Color color, int prevX, int prevY, Color ligaColor)
     {
-        Debug.Assert(x >= -1 && x <= _viewAreaMaxX);
-        Debug.Assert(y >= -1 && y <= _viewAreaMaxY);
-        SetPixel(x, y, color);
+        Debug.Assert(x >= -1 && x <= _x.MaxViewCoord);
+        Debug.Assert(y >= -1 && y <= _y.MaxViewCoord);
+        _renderCtx.SetPixel(x, y, color);
 
         // Liga
 
@@ -481,7 +464,7 @@ public sealed class Grapher
             var yStep = (y - prevY) / (float)xDiff;
 
             for (var i = 2; i < xDiff - 1; i += 2)
-                SetPixel(prevX + i, prevY + (int)MathF.Round(yStep * i), ligaColor);
+                _renderCtx.SetPixel(prevX + i, prevY + (int)MathF.Round(yStep * i), ligaColor);
         }
         else
         {
@@ -489,17 +472,11 @@ public sealed class Grapher
 
             if (y > prevY)
                 for (var i = 2; i < yDiffAbs - 1; i += 2)
-                    SetPixel(prevX + (int)MathF.Floor(xStep * i), prevY + i, ligaColor);
+                    _renderCtx.SetPixel(prevX + (int)MathF.Floor(xStep * i), prevY + i, ligaColor);
             else
                 for (var i = 2; i < yDiffAbs - 1; i += 2)
-                    SetPixel(prevX + (int)MathF.Ceiling(xStep * i), prevY - i, ligaColor);
+                    _renderCtx.SetPixel(prevX + (int)MathF.Ceiling(xStep * i), prevY - i, ligaColor);
         }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void SetPixel(int x, int y, Color color)
-    {
-        _bitmap.SetPixel(_paddingSize + x, _bitmapMaxY - y, color);
     }
 
     #endregion
@@ -526,8 +503,8 @@ public sealed class Grapher
 
         _insVersion++;
 
-        if (_ins.Length != _viewAreaWidth)
-            _ins = new double[_viewAreaWidth];
+        if (_ins.Length != _x.ViewAreaSize)
+            _ins = new double[_x.ViewAreaSize];
 
         for (var x = 0; x < _ins.Length; x++)
         {
@@ -544,4 +521,40 @@ public sealed class Grapher
     }
 
     #endregion
+
+    private readonly struct RenderCtx(PictureBox pictureBox)
+    {
+        private const int _paddingSize = 10;
+        private readonly Bitmap _bitmap = new(pictureBox.Width, pictureBox.Height);
+        private readonly int _rawMaxY = pictureBox.Height - _paddingSize - 1;
+
+        public int RawMinX => _paddingSize;
+        public int RawMaxX => pictureBox.Width - _paddingSize - 1;
+        public int RawMinY => _paddingSize;
+        public int RawMaxY => _rawMaxY;
+        public bool IsWidthChanged => pictureBox.Width != _bitmap.Width;
+        public bool IsHeightChanged => pictureBox.Height != _bitmap.Height;
+        public int ViewAreaWidth => pictureBox.Width - _paddingSize * 2;
+        public int ViewAreaHeight => pictureBox.Height - _paddingSize * 2;
+
+        public int RawToX(int rawX) => rawX - RawMinX;
+        public int RawToY(int rawY) => _rawMaxY - rawY;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetPixel(int x, int y, Color color)
+        {
+            Debug.Assert(x >= 0 && x < ViewAreaWidth);
+            Debug.Assert(y >= 0 && y < ViewAreaHeight);
+            _bitmap.SetPixel(_paddingSize + x, _rawMaxY - y, color);
+        }
+
+        public RenderCtx GetNew() => new(pictureBox);
+
+        public void Apply()
+        {
+            var oldImage = pictureBox.Image;
+            pictureBox.Image = _bitmap;
+            oldImage?.Dispose();
+        }
+    }
 }

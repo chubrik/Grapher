@@ -7,15 +7,6 @@ internal sealed class Axis
 {
     private const int _expIndexLimit = 300;
 
-    public static Axis Default = new(
-        viewAreaSize: 100,
-        minExpIndex: 0,
-        maxExpIndex: 6,
-        tryMinViewValue: double.NegativeInfinity,
-        tryMaxViewValue: double.PositiveInfinity,
-        minValueLimit: double.NegativeInfinity,
-        maxValueLimit: double.PositiveInfinity);
-
     private readonly int _viewAreaSize;
     private readonly int _maxViewCoord;
     private readonly int _minExpIndex;
@@ -42,6 +33,8 @@ internal sealed class Axis
     private readonly double _coordToLog;
     private readonly double _inf_MinValue_Mul_CoordDiff;
 
+    public int ViewAreaSize => _viewAreaSize;
+    public int MaxViewCoord => _maxViewCoord;
     public double MinCoord => _negInf_MinCoord;
     public double MaxCoord => _posInf_MaxCoord;
     public int MinExpIndex => _minExpIndex;

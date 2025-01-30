@@ -248,7 +248,7 @@ internal partial class Form : System.Windows.Forms.Form
         _grapher.OnZoom(
             smooth: Smooth,
             zoomIn: zoomIn,
-            rawX: _onlyY ? null : _mousePosX,
-            rawY: _onlyX ? null : _mousePosY);
+            rawX: _onlyY ? null : _mousePosX != -1 ? _mousePosX : PictureBox.Width / 2,
+            rawY: _onlyX ? null : _mousePosY != -1 ? _mousePosY : PictureBox.Height / 2);
     }
 }
