@@ -104,11 +104,7 @@ internal sealed class Axis
         Check(!double.IsNaN(value));
         var coord = ValueToCoord_Private(value);
         var roundedCoord = (int)Math.Round(coord);
-
-        if (roundedCoord >= 0 && roundedCoord <= _maxViewCoord)
-            return roundedCoord;
-
-        return null;
+        return (uint)roundedCoord <= _maxViewCoord ? roundedCoord : null;
     }
 
     private double ValueToCoord_Private(double value)
@@ -333,14 +329,14 @@ internal sealed class Axis
             maxCoord = maxCoordLimit;
         }
 
-        var minViewValue = CoordToValue(minCoord);
-        var maxViewValue = CoordToValue(maxCoord);
+        var minValue = CoordToValue(minCoord);
+        var maxValue = CoordToValue(maxCoord);
 
         var currents = new Data(
             minExp: _currents.MinExp,
             maxExp: _currents.MaxExp,
-            minValue: minViewValue,
-            maxValue: maxViewValue);
+            minValue: minValue,
+            maxValue: maxValue);
 
         try
         {
@@ -364,10 +360,7 @@ internal sealed class Axis
         if (minExp < _limits.MinExp)
             return this;
 
-        var maxExp = _currents.MaxExp;
-
-        if (maxExp < minExp)
-            maxExp = minExp;
+        var maxExp = Math.Max(minExp, _currents.MaxExp);
 
         var currents = new Data(
             minExp: minExp,
@@ -389,10 +382,7 @@ internal sealed class Axis
         if (maxExp > _limits.MaxExp)
             return this;
 
-        var minExp = _currents.MinExp;
-
-        if (minExp > maxExp)
-            minExp = maxExp;
+        var minExp = Math.Min(_currents.MinExp, maxExp);
 
         var currents = new Data(
             minExp: minExp,

@@ -12,7 +12,7 @@ public sealed class Grapher
     private Axis _axisX;
     private Axis _axisY;
 
-    public Grapher(PictureBox pictureBox)
+    internal Grapher(PictureBox pictureBox)
     {
         _renderCtx = new RenderCtx(pictureBox);
         _axisX = Axis.FromViewAreaSize(_renderCtx.ViewAreaWidth);
@@ -45,11 +45,11 @@ public sealed class Grapher
 
         RenderRulers();
 
-        foreach (var graphJob in _graphJobs)
-            RenderGraph(graphJob);
+        foreach (var graph in _graphs)
+            RenderGraph(graph);
 
-        foreach (var (color, markers) in _markerJobs)
-            RenderMarker(color, markers);
+        foreach (var (color, markers) in _markerGroups)
+            RenderMarkers(color, markers);
 
         _renderCtx.Apply();
     }
@@ -62,7 +62,7 @@ public sealed class Grapher
     private const double _moveSmoothFactor = _moveFactor * _smoothFactor;
     private static readonly double _zoomSmoothFactor = Math.Pow(_zoomFactor, _smoothFactor);
 
-    public void OnResize()
+    internal void OnResize()
     {
         var isXChanged = SetX(_axisX.WithViewAreaSize(_renderCtx.ViewAreaWidth));
         var isYChanged = SetY(_axisY.WithViewAreaSize(_renderCtx.ViewAreaHeight));
@@ -71,13 +71,13 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnSetAsDefault()
+    internal void OnSetAsDefault()
     {
         _axisX.SetAsDefaults();
         _axisY.SetAsDefaults();
     }
 
-    public void OnReset()
+    internal void OnReset()
     {
         var isXChanged = SetX(_axisX.WithDefaults());
         var isYChanged = SetY(_axisY.WithDefaults());
@@ -86,7 +86,7 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnZoom(bool smooth, bool zoomIn, int? rawX, int? rawY)
+    internal void OnZoom(bool smooth, bool zoomIn, int? rawX, int? rawY)
     {
         var zoomFactor = zoomIn
             ? 1 / (smooth ? _zoomSmoothFactor : _zoomFactor)
@@ -121,12 +121,12 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
-    public void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
-    public void OnMoveUp(bool smooth) => OnMove(rawXDiff: 0, (int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
-    public void OnMoveDown(bool smooth) => OnMove(rawXDiff: 0, -(int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    internal void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
+    internal void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
+    internal void OnMoveUp(bool smooth) => OnMove(rawXDiff: 0, (int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    internal void OnMoveDown(bool smooth) => OnMove(rawXDiff: 0, -(int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
 
-    public void OnMove(int rawXDiff, int rawYDiff)
+    internal void OnMove(int rawXDiff, int rawYDiff)
     {
         var isXChanged = rawXDiff != 0 && ((rawXDiff > 0 && _axisX.MinCoord < 0) || (rawXDiff < 0 && _axisX.MaxCoord > _axisX.MaxViewCoord));
         var isYChanged = rawYDiff != 0 && ((rawYDiff < 0 && _axisY.MinCoord < 0) || (rawYDiff > 0 && _axisY.MaxCoord > _axisY.MaxViewCoord));
@@ -149,10 +149,10 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnRangeX(int rawMinX, int rawMaxX) => OnRange(rawMinX, rawMaxX, _renderCtx.RawMinY, _renderCtx.RawMaxY);
-    public void OnRangeY(int rawMinY, int rawMaxY) => OnRange(_renderCtx.RawMinX, _renderCtx.RawMaxX, rawMinY, rawMaxY);
+    internal void OnRangeX(int rawMinX, int rawMaxX) => OnRange(rawMinX, rawMaxX, _renderCtx.RawMinY, _renderCtx.RawMaxY);
+    internal void OnRangeY(int rawMinY, int rawMaxY) => OnRange(_renderCtx.RawMinX, _renderCtx.RawMaxX, rawMinY, rawMaxY);
 
-    public void OnRange(int rawMinX, int rawMaxX, int rawMinY, int rawMaxY)
+    internal void OnRange(int rawMinX, int rawMaxX, int rawMinY, int rawMaxY)
     {
         if (rawMinX == rawMaxX || rawMinY == rawMaxY)
             return;
@@ -169,7 +169,7 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnMinExp(int xDiff, int yDiff)
+    internal void OnMinExp(int xDiff, int yDiff)
     {
         Check(xDiff >= -1 && xDiff <= 1);
         Check(yDiff >= -1 && yDiff <= 1);
@@ -181,7 +181,7 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnMaxExp(int xDiff, int yDiff)
+    internal void OnMaxExp(int xDiff, int yDiff)
     {
         Check(xDiff >= -1 && xDiff <= 1);
         Check(yDiff >= -1 && yDiff <= 1);
@@ -243,23 +243,25 @@ public sealed class Grapher
     #region Graphs
 
     private const double _ligaBright = 0.4;
-    private readonly List<GraphJob> _graphJobs = [];
+    private readonly List<Graph> _graphs = [];
 
     public void AddGraph(Func<double, double> calculate, Color? color = null)
     {
-        _graphJobs.Add(new(calculate, GraphType.Default, color ?? Color.White));
+        var graph = new Graph(calculate, GraphType.Default, color ?? Color.White);
+        _graphs.Add(graph);
     }
 
     public void AddGraphInteger(Func<double, double> calculate, Color? color = null)
     {
-        _graphJobs.Add(new(calculate, GraphType.Integer, color ?? Color.White));
+        var graph = new Graph(calculate, GraphType.Integer, color ?? Color.White);
+        _graphs.Add(graph);
     }
 
-    private void RenderGraph(GraphJob graphJob)
+    private void RenderGraph(Graph graph)
     {
-        var color = graphJob.Color;
-        var calculate = graphJob.Calculate;
-        var isIntegerType = graphJob.Type == GraphType.Integer;
+        var color = graph.Color;
+        var calculate = graph.Calculate;
+        var isIntegerType = graph.Type == GraphType.Integer;
 
         var ligaColor = Color.FromArgb(
             (int)(color.R * _ligaBright), (int)(color.G * _ligaBright), (int)(color.B * _ligaBright));
@@ -268,9 +270,9 @@ public sealed class Grapher
         var prevX = -1;
         var prevY = -1;
 
-        var useCache = graphJob.InsVersion == _insVersion;
-        var cachedOuts = useCache ? graphJob.CachedOuts : graphJob.CachedOuts = new double[_ins.Length];
-        graphJob.InsVersion = _insVersion;
+        var useCache = graph.InsVersion == _insVersion;
+        var cachedOuts = useCache ? graph.CachedOuts : graph.CachedOuts = new double[_ins.Length];
+        graph.InsVersion = _insVersion;
 
         for (var x = 0; x < _ins.Length; x++)
         {
@@ -354,9 +356,9 @@ public sealed class Grapher
 
     #region Markers
 
-    private readonly List<(Color color, IReadOnlyList<InOut> markers)> _markerJobs = [];
+    private readonly List<(Color Color, IReadOnlyList<InOut> Markers)> _markerGroups = [];
 
-    private void RenderMarker(Color color, IReadOnlyList<InOut> markers)
+    private void RenderMarkers(Color color, IReadOnlyList<InOut> markers)
     {
         throw new NotImplementedException();
     }
@@ -376,14 +378,14 @@ public sealed class Grapher
         _axisX = axisX;
         _insVersion++;
 
-        if (_ins.Length != _axisX.ViewAreaSize)
-            _ins = new double[_axisX.ViewAreaSize];
+        if (_ins.Length != axisX.ViewAreaSize)
+            _ins = new double[axisX.ViewAreaSize];
 
         for (var x = 0; x < _ins.Length; x++)
         {
-            var @in = _axisX.CoordToValue(x);
-            if (@in < _axisX.MinValueLimit) @in = _axisX.MinValueLimit;
-            if (@in > _axisX.MaxValueLimit) @in = _axisX.MaxValueLimit;
+            var @in = axisX.CoordToValue(x);
+            if (@in < axisX.MinValueLimit) @in = axisX.MinValueLimit;
+            if (@in > axisX.MaxValueLimit) @in = axisX.MaxValueLimit;
             _ins[x] = @in;
         }
 
