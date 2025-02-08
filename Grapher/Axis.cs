@@ -5,6 +5,8 @@ using static ValidationHelper;
 
 internal sealed class Axis
 {
+    #region Common
+
     private readonly int _viewAreaSize;
     private readonly int _maxViewCoord;
     private readonly Data _currents;
@@ -99,112 +101,6 @@ internal sealed class Axis
         _inf_MinValue_Mul_CoordDiff *= coordMultiplier;
     }
 
-    public int? ValueToCoord(double value)
-    {
-        Check(!double.IsNaN(value));
-        var coord = ValueToCoord_Private(value);
-        var roundedCoord = (int)Math.Round(coord);
-
-        if (roundedCoord >= 0 && roundedCoord <= _maxViewCoord)
-            return roundedCoord;
-
-        return null;
-    }
-
-    private double ValueToCoord_Private(double value)
-    {
-        Debug.Assert(!double.IsNaN(value));
-
-        double coord;
-
-        if (value < -_exp_MaxValue)
-        {
-            // Negative hyperbolic zone
-            var coordRelative = -_inf_MinValue_Mul_CoordDiff / value;
-            coord = _negInf_MinCoord + coordRelative;
-        }
-        else if (value < -_linear_MaxValue)
-        {
-            // Negative exponential zone
-            var log = Math.Log10(-value);
-            var logRelative = log - _minLog;
-            var coordRelative = logRelative * _logToCoord;
-            coord = _linear_MinCoord - coordRelative;
-        }
-        else if (value <= _linear_MaxValue)
-        {
-            // Linear zone
-            var valueRelative = value + _linear_MaxValue;
-            var coordRelative = valueRelative * _valueToCoord;
-            coord = _linear_MinCoord + coordRelative;
-        }
-        else if (value <= _exp_MaxValue)
-        {
-            // Positive exponential zone
-            var log = Math.Log10(value);
-            var logRelative = log - _minLog;
-            var coordRelative = logRelative * _logToCoord;
-            coord = _linear_MaxCoord + coordRelative;
-        }
-        else
-        {
-            // Positive hyperbolic zone
-            var coordRelative = _inf_MinValue_Mul_CoordDiff / value;
-            coord = _posInf_MaxCoord - coordRelative;
-        }
-
-        Debug.Assert(coord >= _negInf_MinCoord && coord <= _posInf_MaxCoord);
-        return coord;
-    }
-
-    public double CoordToValue(double coord)
-    {
-        double value;
-
-        if (coord < _negExp_MinCoord)
-        {
-            // Negative hyperbolic zone
-            if (coord <= _negInf_MinCoord) return double.NegativeInfinity;
-            var coordRelative = coord - _negInf_MinCoord;
-            value = -_inf_MinValue_Mul_CoordDiff / coordRelative;
-        }
-        else if (coord < _linear_MinCoord)
-        {
-            // Negative exponential zone
-            var coordRelative = _linear_MinCoord - coord;
-            var logRelative = coordRelative * _coordToLog;
-            var log = _minLog + logRelative;
-            value = -Math.Pow(10, log);
-        }
-        else if (coord <= _linear_MaxCoord)
-        {
-            // Linear zone
-            var coordRelative = coord - _linear_MinCoord;
-            var valueRelative = coordRelative * _coordToValue;
-            value = valueRelative - _linear_MaxValue;
-        }
-        else if (coord <= _posExp_MaxCoord)
-        {
-            // Positive exponential zone
-            var coordRelative = coord - _linear_MaxCoord;
-            var logRelative = coordRelative * _coordToLog;
-            var log = _minLog + logRelative;
-            value = Math.Pow(10, log);
-        }
-        else
-        {
-            // Positive hyperbolic zone
-            if (coord >= _posInf_MaxCoord) return double.PositiveInfinity;
-            var coordRelative = _posInf_MaxCoord - coord;
-            value = _inf_MinValue_Mul_CoordDiff / coordRelative;
-        }
-
-        Debug.Assert(!double.IsNaN(value));
-        return value;
-    }
-
-    #region Tools
-
     public bool Equals(Axis other)
     {
         if (_viewAreaSize != other._viewAreaSize) return false;
@@ -213,6 +109,51 @@ internal sealed class Axis
         if (_limits != other._limits) return false;
         return true;
     }
+
+    public readonly struct Data
+    {
+        public readonly int MinExp;
+        public readonly int MaxExp;
+        public readonly double MinValue;
+        public readonly double MaxValue;
+
+        public Data(int minExp, int maxExp, double minValue, double maxValue)
+        {
+            Check(minExp <= maxExp);
+            Check(minValue < maxValue);
+
+            MinExp = minExp;
+            MaxExp = maxExp;
+            MinValue = minValue;
+            MaxValue = maxValue;
+        }
+
+        public bool IsInLimits(Data limits)
+        {
+            if (MinExp < limits.MinExp) return false;
+            if (MaxExp > limits.MaxExp) return false;
+            if (MinValue < limits.MinValue) return false;
+            if (MaxValue > limits.MaxValue) return false;
+            return true;
+        }
+
+        public static bool operator ==(Data left, Data right)
+        {
+            if (left.MinExp != right.MinExp) return false;
+            if (left.MaxExp != right.MaxExp) return false;
+            if (left.MinValue != right.MinValue) return false;
+            if (left.MaxValue != right.MaxValue) return false;
+            return true;
+        }
+
+        public static bool operator !=(Data left, Data right) => !(left == right);
+        public override bool Equals(object? obj) => obj is Data data && this == data;
+        public override int GetHashCode() => HashCode.Combine(MinExp, MaxExp, MinValue, MaxValue);
+    }
+
+    #endregion
+
+    #region Creation
 
     public static Axis FromViewAreaSize(int viewAreaSize)
     {
@@ -428,44 +369,111 @@ internal sealed class Axis
 
     #endregion
 
-    public readonly struct Data
+    #region Conversions
+
+    public int? ValueToCoord(double value)
     {
-        public readonly int MinExp;
-        public readonly int MaxExp;
-        public readonly double MinValue;
-        public readonly double MaxValue;
+        Check(!double.IsNaN(value));
+        var coord = ValueToCoord_Private(value);
+        var roundedCoord = (int)Math.Round(coord);
 
-        public Data(int minExp, int maxExp, double minValue, double maxValue)
-        {
-            Check(minExp <= maxExp);
-            Check(minValue < maxValue);
+        if (roundedCoord >= 0 && roundedCoord <= _maxViewCoord)
+            return roundedCoord;
 
-            MinExp = minExp;
-            MaxExp = maxExp;
-            MinValue = minValue;
-            MaxValue = maxValue;
-        }
-
-        public bool IsInLimits(Data limits)
-        {
-            if (MinExp < limits.MinExp) return false;
-            if (MaxExp > limits.MaxExp) return false;
-            if (MinValue < limits.MinValue) return false;
-            if (MaxValue > limits.MaxValue) return false;
-            return true;
-        }
-
-        public static bool operator ==(Data left, Data right)
-        {
-            if (left.MinExp != right.MinExp) return false;
-            if (left.MaxExp != right.MaxExp) return false;
-            if (left.MinValue != right.MinValue) return false;
-            if (left.MaxValue != right.MaxValue) return false;
-            return true;
-        }
-
-        public static bool operator !=(Data left, Data right) => !(left == right);
-        public override bool Equals(object? obj) => obj is Data data && this == data;
-        public override int GetHashCode() => HashCode.Combine(MinExp, MaxExp, MinValue, MaxValue);
+        return null;
     }
+
+    private double ValueToCoord_Private(double value)
+    {
+        Debug.Assert(!double.IsNaN(value));
+
+        double coord;
+
+        if (value < -_exp_MaxValue)
+        {
+            // Negative hyperbolic zone
+            var coordRelative = -_inf_MinValue_Mul_CoordDiff / value;
+            coord = _negInf_MinCoord + coordRelative;
+        }
+        else if (value < -_linear_MaxValue)
+        {
+            // Negative exponential zone
+            var log = Math.Log10(-value);
+            var logRelative = log - _minLog;
+            var coordRelative = logRelative * _logToCoord;
+            coord = _linear_MinCoord - coordRelative;
+        }
+        else if (value <= _linear_MaxValue)
+        {
+            // Linear zone
+            var valueRelative = value + _linear_MaxValue;
+            var coordRelative = valueRelative * _valueToCoord;
+            coord = _linear_MinCoord + coordRelative;
+        }
+        else if (value <= _exp_MaxValue)
+        {
+            // Positive exponential zone
+            var log = Math.Log10(value);
+            var logRelative = log - _minLog;
+            var coordRelative = logRelative * _logToCoord;
+            coord = _linear_MaxCoord + coordRelative;
+        }
+        else
+        {
+            // Positive hyperbolic zone
+            var coordRelative = _inf_MinValue_Mul_CoordDiff / value;
+            coord = _posInf_MaxCoord - coordRelative;
+        }
+
+        Debug.Assert(coord >= _negInf_MinCoord && coord <= _posInf_MaxCoord);
+        return coord;
+    }
+
+    public double CoordToValue(double coord)
+    {
+        double value;
+
+        if (coord < _negExp_MinCoord)
+        {
+            // Negative hyperbolic zone
+            if (coord <= _negInf_MinCoord) return double.NegativeInfinity;
+            var coordRelative = coord - _negInf_MinCoord;
+            value = -_inf_MinValue_Mul_CoordDiff / coordRelative;
+        }
+        else if (coord < _linear_MinCoord)
+        {
+            // Negative exponential zone
+            var coordRelative = _linear_MinCoord - coord;
+            var logRelative = coordRelative * _coordToLog;
+            var log = _minLog + logRelative;
+            value = -Math.Pow(10, log);
+        }
+        else if (coord <= _linear_MaxCoord)
+        {
+            // Linear zone
+            var coordRelative = coord - _linear_MinCoord;
+            var valueRelative = coordRelative * _coordToValue;
+            value = valueRelative - _linear_MaxValue;
+        }
+        else if (coord <= _posExp_MaxCoord)
+        {
+            // Positive exponential zone
+            var coordRelative = coord - _linear_MaxCoord;
+            var logRelative = coordRelative * _coordToLog;
+            var log = _minLog + logRelative;
+            value = Math.Pow(10, log);
+        }
+        else
+        {
+            // Positive hyperbolic zone
+            if (coord >= _posInf_MaxCoord) return double.PositiveInfinity;
+            var coordRelative = _posInf_MaxCoord - coord;
+            value = _inf_MinValue_Mul_CoordDiff / coordRelative;
+        }
+
+        Debug.Assert(!double.IsNaN(value));
+        return value;
+    }
+
+    #endregion
 }

@@ -8,6 +8,8 @@ using static ValidationHelper;
 
 public sealed class Grapher
 {
+    #region Common
+
     private RenderCtx _renderCtx;
     private Axis _axisX;
     private Axis _axisY;
@@ -29,16 +31,6 @@ public sealed class Grapher
         Application.Run(form);
     }
 
-    public void SetMeasures(Action<Measures, Measures> onMeasures)
-    {
-        var measuresX = new Measures();
-        var measuresY = new Measures();
-        onMeasures(measuresX, measuresY);
-
-        SetX(_axisX.WithMeasures(measuresX));
-        SetY(_axisY.WithMeasures(measuresY));
-    }
-
     private void Render()
     {
         _renderCtx = _renderCtx.GetNew();
@@ -54,6 +46,42 @@ public sealed class Grapher
         _renderCtx.Apply();
     }
 
+    private readonly struct RenderCtx(PictureBox pictureBox)
+    {
+        private const int _paddingSize = 10;
+        private readonly Bitmap _bitmap = new(pictureBox.Width, pictureBox.Height);
+        private readonly int _rawMaxY = pictureBox.Height - _paddingSize - 1;
+
+        public int RawMinX => _paddingSize;
+        public int RawMaxX => pictureBox.Width - _paddingSize - 1;
+        public int RawMinY => _paddingSize;
+        public int RawMaxY => _rawMaxY;
+        public int ViewAreaWidth => pictureBox.Width - _paddingSize * 2;
+        public int ViewAreaHeight => pictureBox.Height - _paddingSize * 2;
+
+        public int RawToX(int rawX) => rawX - RawMinX;
+        public int RawToY(int rawY) => _rawMaxY - rawY;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetPixel(int x, int y, Color color)
+        {
+            Debug.Assert(x >= 0 && x < ViewAreaWidth);
+            Debug.Assert(y >= 0 && y < ViewAreaHeight);
+            _bitmap.SetPixel(_paddingSize + x, _rawMaxY - y, color);
+        }
+
+        public RenderCtx GetNew() => new(pictureBox);
+
+        public void Apply()
+        {
+            var oldImage = pictureBox.Image;
+            pictureBox.Image = _bitmap;
+            oldImage?.Dispose();
+        }
+    }
+
+    #endregion
+
     #region Navigation
 
     private const double _zoomFactor = 2;
@@ -61,6 +89,16 @@ public sealed class Grapher
     private const double _smoothFactor = 0.1;
     private const double _moveSmoothFactor = _moveFactor * _smoothFactor;
     private static readonly double _zoomSmoothFactor = Math.Pow(_zoomFactor, _smoothFactor);
+
+    public void SetMeasures(Action<Measures, Measures> onMeasures)
+    {
+        var measuresX = new Measures();
+        var measuresY = new Measures();
+        onMeasures(measuresX, measuresY);
+
+        SetX(_axisX.WithMeasures(measuresX));
+        SetY(_axisY.WithMeasures(measuresY));
+    }
 
     public void OnResize()
     {
@@ -191,6 +229,40 @@ public sealed class Grapher
 
         if (isXChanged || isYChanged)
             Render();
+    }
+
+    private int _insVersion = 0;
+    private double[] _ins = [];
+
+    private bool SetX(Axis axisX)
+    {
+        if (axisX.Equals(_axisX))
+            return false;
+
+        _axisX = axisX;
+        _insVersion++;
+
+        if (_ins.Length != _axisX.ViewAreaSize)
+            _ins = new double[_axisX.ViewAreaSize];
+
+        for (var x = 0; x < _ins.Length; x++)
+        {
+            var @in = _axisX.CoordToValue(x);
+            if (@in < _axisX.MinValueLimit) @in = _axisX.MinValueLimit;
+            if (@in > _axisX.MaxValueLimit) @in = _axisX.MaxValueLimit;
+            _ins[x] = @in;
+        }
+
+        return true;
+    }
+
+    private bool SetY(Axis axisX)
+    {
+        if (axisX.Equals(_axisY))
+            return false;
+
+        _axisY = axisX;
+        return true;
     }
 
     #endregion
@@ -362,76 +434,4 @@ public sealed class Grapher
     }
 
     #endregion
-
-    #region Tools
-
-    private int _insVersion = 0;
-    private double[] _ins = [];
-
-    private bool SetX(Axis axisX)
-    {
-        if (axisX.Equals(_axisX))
-            return false;
-
-        _axisX = axisX;
-        _insVersion++;
-
-        if (_ins.Length != _axisX.ViewAreaSize)
-            _ins = new double[_axisX.ViewAreaSize];
-
-        for (var x = 0; x < _ins.Length; x++)
-        {
-            var @in = _axisX.CoordToValue(x);
-            if (@in < _axisX.MinValueLimit) @in = _axisX.MinValueLimit;
-            if (@in > _axisX.MaxValueLimit) @in = _axisX.MaxValueLimit;
-            _ins[x] = @in;
-        }
-
-        return true;
-    }
-
-    private bool SetY(Axis axisX)
-    {
-        if (axisX.Equals(_axisY))
-            return false;
-
-        _axisY = axisX;
-        return true;
-    }
-
-    #endregion
-
-    private readonly struct RenderCtx(PictureBox pictureBox)
-    {
-        private const int _paddingSize = 10;
-        private readonly Bitmap _bitmap = new(pictureBox.Width, pictureBox.Height);
-        private readonly int _rawMaxY = pictureBox.Height - _paddingSize - 1;
-
-        public int RawMinX => _paddingSize;
-        public int RawMaxX => pictureBox.Width - _paddingSize - 1;
-        public int RawMinY => _paddingSize;
-        public int RawMaxY => _rawMaxY;
-        public int ViewAreaWidth => pictureBox.Width - _paddingSize * 2;
-        public int ViewAreaHeight => pictureBox.Height - _paddingSize * 2;
-
-        public int RawToX(int rawX) => rawX - RawMinX;
-        public int RawToY(int rawY) => _rawMaxY - rawY;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetPixel(int x, int y, Color color)
-        {
-            Debug.Assert(x >= 0 && x < ViewAreaWidth);
-            Debug.Assert(y >= 0 && y < ViewAreaHeight);
-            _bitmap.SetPixel(_paddingSize + x, _rawMaxY - y, color);
-        }
-
-        public RenderCtx GetNew() => new(pictureBox);
-
-        public void Apply()
-        {
-            var oldImage = pictureBox.Image;
-            pictureBox.Image = _bitmap;
-            oldImage?.Dispose();
-        }
-    }
 }
