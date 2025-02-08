@@ -2,6 +2,8 @@
 
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 using static ValidationHelper;
@@ -19,7 +21,6 @@ public sealed class Grapher
         _renderer = new Renderer(pictureBox);
         _axisX = Axis.FromViewAreaSize(_renderer.ViewAreaWidth);
         _axisY = Axis.FromViewAreaSize(_renderer.ViewAreaHeight);
-        InitRulers();
     }
 
     public static void Run(Action<Grapher> onGrapher)
@@ -75,6 +76,24 @@ public sealed class Grapher
         public void RenderPixel(int viewX, int viewY, Color color)
         {
             _bitmap.SetPixel(ViewToNativeX(viewX), ViewToNativeY(viewY), color);
+        }
+
+        public void RenderRulerNumber(double number, int viewX, int viewY, Color color)
+        {
+            var nativeX = ViewToNativeX(viewX);
+            var nativeY = ViewToNativeY(viewY);
+            var bright = Math.Min(color.R * 2, 255);
+            var brush = new SolidBrush(Color.FromArgb(bright, bright, bright));
+            var text = number.ToString(number > -10000 && number < 10000 ? "0.###############" : "0.############### e0");
+
+            // https://stackoverflow.com/a/6311628/7254784
+            var g = Graphics.FromImage(_bitmap);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.DrawString(text, _rulerFont, brush, nativeX + 2, nativeY - 14);
+            g.Flush();
         }
 
         #region Conversions
@@ -299,29 +318,60 @@ public sealed class Grapher
 
     #region Rulers
 
-    private const int _rulerGray = 64;
-    private static readonly double _rulerBrightFactor = Math.Sqrt(0.5);
-    private static readonly Color[] _rulerColors = new Color[3];
+    private const int _rulerMaxBright = 96;
+    private static readonly Dictionary<float, Color> _rulerWeightToColor = [];
     private static readonly Font _rulerFont = new("Tahoma", 8);
-
-    private static void InitRulers()
-    {
-        var subRulerGray = (int)Math.Round(_rulerGray * _rulerBrightFactor);
-        var subSubRulerGray = (int)Math.Round(_rulerGray * _rulerBrightFactor * _rulerBrightFactor);
-        _rulerColors[0] = Color.FromArgb(_rulerGray, _rulerGray, _rulerGray);
-        _rulerColors[1] = Color.FromArgb(subRulerGray, subRulerGray, subRulerGray);
-        _rulerColors[2] = Color.FromArgb(subSubRulerGray, subSubRulerGray, subSubRulerGray);
-    }
 
     private void RenderRulers()
     {
-        // todo
+        var rulers = new List<(Axis.Ruler Ruler, Action Render)>();
 
-        var borderColor = _rulerColors[0];
+        foreach (var xRuler in _axisX.GetVisibleRulers())
+        {
+            rulers.Add((xRuler, () =>
+            {
+                var color = GetRulerColor(xRuler.Weight);
+                RenderXRuler(xRuler.ViewCoord, color);
+
+                if (xRuler.Weight > 0.03f)
+                    _renderer.RenderRulerNumber(xRuler.Value, xRuler.ViewCoord, 0, color);
+            }
+            ));
+        }
+
+        foreach (var yRuler in _axisY.GetVisibleRulers())
+        {
+            rulers.Add((yRuler, () =>
+            {
+                var color = GetRulerColor(yRuler.Weight);
+                RenderYRuler(yRuler.ViewCoord, color);
+
+                if (yRuler.Weight > 0.03f)
+                    _renderer.RenderRulerNumber(yRuler.Value, 0, yRuler.ViewCoord, color);
+            }
+            ));
+        }
+
+        foreach (var (ruler, render) in rulers.OrderBy(r => r.Ruler.Weight))
+            render();
+
+        var borderColor = GetRulerColor(1);
         RenderXRuler(0, borderColor);
         RenderXRuler(_axisX.MaxViewCoord, borderColor);
         RenderYRuler(0, borderColor);
         RenderYRuler(_axisY.MaxViewCoord, borderColor);
+    }
+
+    private static Color GetRulerColor(float weight)
+    {
+        if (!_rulerWeightToColor.TryGetValue(weight, out var color))
+        {
+            var bright = (int)(_rulerMaxBright * MathF.Pow(weight, 0.3f));
+            color = Color.FromArgb(bright, bright, bright);
+            _rulerWeightToColor[weight] = color;
+        }
+
+        return color;
     }
 
     private void RenderXRuler(int x, Color color)

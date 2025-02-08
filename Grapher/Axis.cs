@@ -1,6 +1,7 @@
 ﻿namespace Chubrik.Grapher;
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using static ValidationHelper;
 
 internal sealed class Axis
@@ -352,18 +353,25 @@ internal sealed class Axis
 
     #region Conversions
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int? ValueToViewCoord(double value)
     {
         if (double.IsNaN(value))
             return null;
 
         var coord = ValueToCoord(value);
-        var roundedCoord = (int)Math.Round(coord);
+        return CoordToViewCoord(coord);
+    }
 
-        if ((uint)roundedCoord > _maxViewCoord)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int? CoordToViewCoord(double coord)
+    {
+        var viewCoord = (int)Math.Round(coord);
+
+        if ((uint)viewCoord > _maxViewCoord)
             return null;
 
-        return roundedCoord;
+        return viewCoord;
     }
 
     private double ValueToCoord(double value)
@@ -456,6 +464,175 @@ internal sealed class Axis
 
         Debug.Assert(!double.IsNaN(value));
         return value;
+    }
+
+    #endregion
+
+    #region Rulers
+
+    private const double _rulersMinCoordStepForDeep = 50;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public IEnumerable<Ruler> GetVisibleRulers()
+    {
+        return GetAllRulers().Where(x => x.IsVisible());
+    }
+
+    private List<Ruler> GetAllRulers()
+    {
+        var rulers = new List<Ruler>();
+        var minViewValue = _currents.MinViewValue;
+        var maxViewValue = _currents.MaxViewValue;
+
+        // Если на экране бо́льшую часть занимают отрицательные значения,
+        // переворачиваем видимую область, чтобы направить вычисления в положительную сторону.
+        if (Math.Abs(minViewValue) > Math.Abs(maxViewValue))
+            (minViewValue, maxViewValue) = (-maxViewValue, -minViewValue);
+
+        if (minViewValue < 0 && maxViewValue > 0) // Ноль в видимой области
+        {
+            var positiveRulers = new List<Ruler>();
+            var zeroRuler = Ruler.FromRelativeCoord(this, value: 0, relativeCoord: _minCoord);
+            var isMaxLinearValueVisible = _maxLinearValue < maxViewValue;
+
+            var maxLinearValue = isMaxLinearValueVisible
+                ? _maxLinearValue
+                : Math.Pow(10, Math.Ceiling(Math.Log10(maxViewValue)));
+
+            var linearMaxRuler = zeroRuler.GetRelative(maxLinearValue);
+            var linearStep = maxLinearValue * 0.1;
+            var linearRulers = GetLinearRulers(from: zeroRuler, to: linearMaxRuler, initStep: linearStep);
+            positiveRulers.AddRange(linearRulers);
+
+            if (isMaxLinearValueVisible) // Верхняя граница линейной зоны в видимой области
+            {
+                // Проходимся по порядку по каждому сегменту логарифмической зоны.
+                // Сохраняем каждую границу как линейку 1 уровня.
+                // По пути запускаем рекурсии 2 уровня, в каждом сегменте значение в 10 раз больше.
+                // (Для гиперполической зоны рекурсия особая.)
+            }
+
+            rulers.Add(zeroRuler);
+            rulers.AddRange(positiveRulers);
+            rulers.AddRange(positiveRulers.Select(x => x.GetNegative())); // Применяем отрицательные значения
+            return rulers;
+        }
+        // Ноль не в видимой области
+
+        // Определяем, с какой стороны абсолютное значение больше, и используем это направление для дальнейших расчётов.
+
+        { // Две или более границ из логарифмической зоны в видимой области.
+            // Сохраняем каждую границу как линейку 0 уровня.
+            // По пути запускаем рекурсии 1 уровня, в каждом сегменте значение в 10 раз больше.
+            // (Для гиперполической зоны рекурсия особая.)
+        }
+        { // Одна из границ логарифмической зоны в видимой области.
+            // Сохраняем границу как линейку 0 уровня.
+            // Берём разницу значений между границами видимой области, но не более чем значение границы.
+            // Берём логарифм и округляем вниз. Далее две рекурсии 1 уровня, значения одинаковые.
+            // (Для гиперполической зоны рекурсия особая.)
+        }
+        // Ни одной из границ логарифмической зоны нет в видимой области.
+
+        { // Мы в линейной или логарифмической зоне.
+            // Берём разницу значений между границами видимой области.
+            // Берём логарифм и округляем вниз. Далее рекурсия 0 уровня.
+        }
+        { // Мы в гиперболической зоне.
+            // ...
+        }
+
+        return rulers;
+    }
+
+    private List<Ruler> GetLinearRulers(Ruler from, Ruler to, double initStep)
+    {
+        var rulers = new List<Ruler>();
+        var needDeep = to.Coord - from.Coord >= _rulersMinCoordStepForDeep;
+        var step = initStep;
+
+        while (needDeep)
+        {
+            var count = 0;
+            needDeep = false;
+            var weight = 0f;
+
+            for (var value = from.Value + step; value < to.Value; value += step)
+            {
+                if (++count % 10 == 0)
+                    continue;
+
+                Ruler ruler;
+
+                if (count == 1)
+                {
+                    ruler = from.GetRelative(value);
+                    weight = ruler.Weight;
+
+                    if (weight == 0)
+                        break;
+
+                    if (ruler.Coord - from.Coord >= _rulersMinCoordStepForDeep)
+                        needDeep = true;
+                }
+                else
+                    ruler = Ruler.FromWeight(this, value, weight: weight);
+
+                rulers.Add(ruler);
+            }
+
+            step *= 0.1;
+        }
+
+        return rulers;
+    }
+
+    public sealed class Ruler
+    {
+        private Axis Axis { get; }
+        public double Value { get; }
+        public double Coord { get; }
+        public float Weight { get; }
+        public int ViewCoord { get; }
+
+        public Ruler(Axis axis, double value, double coord, float weight)
+        {
+            Debug.Assert(weight >= 0 && weight <= 1);
+
+            Axis = axis;
+            Value = value;
+            Coord = coord;
+            Weight = weight;
+            ViewCoord = axis.CoordToViewCoord(coord) ?? -1;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsVisible() => ViewCoord != -1;
+
+        public Ruler GetRelative(double value)
+        {
+            return FromRelativeCoord(axis: Axis, value: value, relativeCoord: Coord);
+        }
+
+        public Ruler GetNegative()
+        {
+            var value = -Value;
+            var coord = Axis.ValueToCoord(value);
+            return new Ruler(Axis, value: value, coord: coord, weight: Weight);
+        }
+
+        public static Ruler FromRelativeCoord(Axis axis, double value, double relativeCoord)
+        {
+            var coord = axis.ValueToCoord(value);
+            var weight = MathF.Min((float)(coord - relativeCoord) / axis._maxViewCoord, 1);
+            return new Ruler(axis, value: value, coord: coord, weight: weight);
+        }
+
+        public static Ruler FromWeight(Axis axis, double value, float weight)
+        {
+            var coord = axis.ValueToCoord(value);
+            return new Ruler(axis, value: value, coord: coord, weight: weight);
+        }
     }
 
     #endregion
