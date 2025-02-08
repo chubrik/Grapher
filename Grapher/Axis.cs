@@ -10,32 +10,32 @@ internal sealed class Axis
     private readonly int _viewAreaSize;
     private readonly int _maxViewCoord;
     private readonly Data _currents;
-    private Data _defaults;
+    private /*    */ Data _defaults;
     private readonly Data _limits;
 
-    private readonly double _minLog;
-    private readonly double _linear_MaxValue;
-    private readonly double _exp_MaxValue;
+    private readonly double _minLogDouble;
+    private readonly double _maxLinearValue;
+    private readonly double _maxLogValue;
 
-    private readonly double _negInf_MinCoord;
-    private readonly double _negExp_MinCoord;
-    private readonly double _linear_MinCoord;
-    private readonly double _linear_MaxCoord;
-    private readonly double _posExp_MaxCoord;
-    private readonly double _posInf_MaxCoord;
+    private readonly double _minCoord;
+    private readonly double _minNegLogCoord;
+    private readonly double _minLinearCoord;
+    private readonly double _maxLinearCoord;
+    private readonly double _maxPosLogCoord;
+    private readonly double _maxCoord;
 
     private readonly double _valueToCoord;
     private readonly double _coordToValue;
     private readonly double _logToCoord;
     private readonly double _coordToLog;
-    private readonly double _inf_MinValue_Mul_CoordDiff;
+    private readonly double _maxLogValue_Mul_CoordDiff;
 
     public int ViewAreaSize => _viewAreaSize;
     public int MaxViewCoord => _maxViewCoord;
-    public double MinCoord => _negInf_MinCoord;
-    public double MaxCoord => _posInf_MaxCoord;
-    public double MinValueLimit => _limits.MinValue;
-    public double MaxValueLimit => _limits.MaxValue;
+    public double MinCoord => _minCoord;
+    public double MaxCoord => _maxCoord;
+    public double MinValueLimit => _limits.MinViewValue;
+    public double MaxValueLimit => _limits.MaxViewValue;
 
     private Axis(int viewAreaSize, Data currents, Data defaults, Data limits)
     {
@@ -49,56 +49,56 @@ internal sealed class Axis
         _defaults = defaults;
         _limits = limits;
 
-        var minExpValue = Math.Pow(10, _currents.MinExp);
-        var maxExpValue = Math.Pow(10, _currents.MaxExp);
+        var maxLinearValue = Math.Pow(10, _currents.MinLog);
+        var maxLogValue = Math.Pow(10, _currents.MaxLog);
 
-        _minLog = _currents.MinExp;
-        _linear_MaxValue = minExpValue;
-        _exp_MaxValue = maxExpValue;
+        _minLogDouble = _currents.MinLog;
+        _maxLinearValue = maxLinearValue;
+        _maxLogValue = maxLogValue;
 
         // Pre Init
 
-        var eMulExpDiff = Math.E * (_currents.MaxExp - _currents.MinExp);
+        var eMulLogDiff = Math.E * (_currents.MaxLog - _currents.MinLog);
 
-        _negInf_MinCoord = -2 - eMulExpDiff;
-        _negExp_MinCoord = -1 - eMulExpDiff;
-        _linear_MinCoord = -1;
-        _linear_MaxCoord = 1;
-        _posExp_MaxCoord = 1 + eMulExpDiff;
-        _posInf_MaxCoord = 2 + eMulExpDiff;
+        _minCoord /* */ = -2 - eMulLogDiff;
+        _minNegLogCoord = -1 - eMulLogDiff;
+        _minLinearCoord = -1;
+        _maxLinearCoord = 1;
+        _maxPosLogCoord = 1 + eMulLogDiff;
+        _maxCoord /* */ = 2 + eMulLogDiff;
 
-        _valueToCoord = 1 / minExpValue;
-        _coordToValue = minExpValue;
+        _valueToCoord = 1 / maxLinearValue;
+        _coordToValue = maxLinearValue;
         _logToCoord = Math.E;
         _coordToLog = 1 / Math.E;
-        _inf_MinValue_Mul_CoordDiff = _exp_MaxValue;
+        _maxLogValue_Mul_CoordDiff = _maxLogValue;
 
         // Pre Calc
 
-        var preMinCoord = ValueToCoord_Private(_currents.MinValue);
-        var preMaxCoord = ValueToCoord_Private(_currents.MaxValue);
-        Check(preMinCoord >= _negInf_MinCoord);
-        Check(preMaxCoord <= _posInf_MaxCoord);
-        Check(preMinCoord < preMaxCoord);
+        var preMinViewCoord = ValueToCoord(_currents.MinViewValue);
+        var preMaxViewCoord = ValueToCoord(_currents.MaxViewValue);
+        Check(preMinViewCoord >= _minCoord);
+        Check(preMaxViewCoord <= _maxCoord);
+        Check(preMinViewCoord < preMaxViewCoord);
 
-        var preCoordDiff = preMaxCoord - preMinCoord;
-        var coordMultiplier = _maxViewCoord / preCoordDiff;
-        var coordShift = -preMinCoord * coordMultiplier;
+        var preViewCoordDiff = preMaxViewCoord - preMinViewCoord;
+        var coordMultiplier = _maxViewCoord / preViewCoordDiff;
+        var coordShift = -preMinViewCoord * coordMultiplier;
 
         // Final Init
 
-        _negInf_MinCoord = _negInf_MinCoord * coordMultiplier + coordShift;
-        _negExp_MinCoord = _negExp_MinCoord * coordMultiplier + coordShift;
-        _linear_MinCoord = _linear_MinCoord * coordMultiplier + coordShift;
-        _linear_MaxCoord = _linear_MaxCoord * coordMultiplier + coordShift;
-        _posExp_MaxCoord = _posExp_MaxCoord * coordMultiplier + coordShift;
-        _posInf_MaxCoord = _posInf_MaxCoord * coordMultiplier + coordShift;
+        _minCoord /* */ = _minCoord /* */ * coordMultiplier + coordShift;
+        _minNegLogCoord = _minNegLogCoord * coordMultiplier + coordShift;
+        _minLinearCoord = _minLinearCoord * coordMultiplier + coordShift;
+        _maxLinearCoord = _maxLinearCoord * coordMultiplier + coordShift;
+        _maxPosLogCoord = _maxPosLogCoord * coordMultiplier + coordShift;
+        _maxCoord /* */ = _maxCoord /* */ * coordMultiplier + coordShift;
 
         _valueToCoord *= coordMultiplier;
         _coordToValue /= coordMultiplier;
         _logToCoord *= coordMultiplier;
         _coordToLog /= coordMultiplier;
-        _inf_MinValue_Mul_CoordDiff *= coordMultiplier;
+        _maxLogValue_Mul_CoordDiff *= coordMultiplier;
     }
 
     public bool Equals(Axis other)
@@ -112,43 +112,43 @@ internal sealed class Axis
 
     public readonly struct Data
     {
-        public readonly int MinExp;
-        public readonly int MaxExp;
-        public readonly double MinValue;
-        public readonly double MaxValue;
+        public readonly int MinLog;
+        public readonly int MaxLog;
+        public readonly double MinViewValue;
+        public readonly double MaxViewValue;
 
-        public Data(int minExp, int maxExp, double minValue, double maxValue)
+        public Data(int minLog, int maxLog, double minViewValue, double maxViewValue)
         {
-            Check(minExp <= maxExp);
-            Check(minValue < maxValue);
+            Check(minLog <= maxLog);
+            Check(minViewValue < maxViewValue);
 
-            MinExp = minExp;
-            MaxExp = maxExp;
-            MinValue = minValue;
-            MaxValue = maxValue;
+            MinLog = minLog;
+            MaxLog = maxLog;
+            MinViewValue = minViewValue;
+            MaxViewValue = maxViewValue;
         }
 
         public bool IsInLimits(Data limits)
         {
-            if (MinExp < limits.MinExp) return false;
-            if (MaxExp > limits.MaxExp) return false;
-            if (MinValue < limits.MinValue) return false;
-            if (MaxValue > limits.MaxValue) return false;
+            if (MinLog < limits.MinLog) return false;
+            if (MaxLog > limits.MaxLog) return false;
+            if (MinViewValue < limits.MinViewValue) return false;
+            if (MaxViewValue > limits.MaxViewValue) return false;
             return true;
         }
 
         public static bool operator ==(Data left, Data right)
         {
-            if (left.MinExp != right.MinExp) return false;
-            if (left.MaxExp != right.MaxExp) return false;
-            if (left.MinValue != right.MinValue) return false;
-            if (left.MaxValue != right.MaxValue) return false;
+            if (left.MinLog != right.MinLog) return false;
+            if (left.MaxLog != right.MaxLog) return false;
+            if (left.MinViewValue != right.MinViewValue) return false;
+            if (left.MaxViewValue != right.MaxViewValue) return false;
             return true;
         }
 
         public static bool operator !=(Data left, Data right) => !(left == right);
         public override bool Equals(object? obj) => obj is Data data && this == data;
-        public override int GetHashCode() => HashCode.Combine(MinExp, MaxExp, MinValue, MaxValue);
+        public override int GetHashCode() => HashCode.Combine(MinLog, MaxLog, MinViewValue, MaxViewValue);
     }
 
     #endregion
@@ -157,23 +157,23 @@ internal sealed class Axis
 
     public static Axis FromViewAreaSize(int viewAreaSize)
     {
-        const int defaultMinExp = 0;
-        const int defaultMaxExp = 6;
-        const int defaultAbsExpLimit = 300;
+        const int initMinLog = 0;
+        const int initMaxLog = 6;
+        const int constAbsLogLimit = 300;
 
         var currents = new Data(
-            minExp: defaultMinExp,
-            maxExp: defaultMaxExp,
-            minValue: double.NegativeInfinity,
-            maxValue: double.PositiveInfinity);
+            minLog: initMinLog,
+            maxLog: initMaxLog,
+            minViewValue: double.NegativeInfinity,
+            maxViewValue: double.PositiveInfinity);
 
         var defaults = currents;
 
         var limits = new Data(
-            minExp: -defaultAbsExpLimit,
-            maxExp: defaultAbsExpLimit,
-            minValue: double.NegativeInfinity,
-            maxValue: double.PositiveInfinity);
+            minLog: -constAbsLogLimit,
+            maxLog: constAbsLogLimit,
+            minViewValue: double.NegativeInfinity,
+            maxViewValue: double.PositiveInfinity);
 
         return new Axis(
             viewAreaSize: viewAreaSize,
@@ -184,38 +184,38 @@ internal sealed class Axis
 
     public Axis WithMeasures(Measures measures)
     {
-        var minExp = _currents.MinExp;
-        var maxExp = _currents.MaxExp;
-        var minValue = _currents.MinValue;
-        var maxValue = _currents.MaxValue;
-        var minValueLimit = measures.MinValueLimit ?? _limits.MinValue;
-        var maxValueLimit = measures.MaxValueLimit ?? _limits.MaxValue;
+        var minLog = _currents.MinLog;
+        var maxLog = _currents.MaxLog;
+        var minValue = _currents.MinViewValue;
+        var maxValue = _currents.MaxViewValue;
+        var minValueLimit = measures.MinValueLimit ?? _limits.MinViewValue;
+        var maxValueLimit = measures.MaxValueLimit ?? _limits.MaxViewValue;
 
-        if (measures.MinExp != null)
-            minExp = Math.Max(measures.MinExp.Value, _limits.MinExp);
+        if (measures.MinLog != null)
+            minLog = Math.Max(measures.MinLog.Value, _limits.MinLog);
 
-        if (measures.MaxExp != null)
-            maxExp = Math.Min(measures.MaxExp.Value, _limits.MaxExp);
+        if (measures.MaxLog != null)
+            maxLog = Math.Min(measures.MaxLog.Value, _limits.MaxLog);
 
-        if (measures.MinValue != null)
-            minValue = Math.Max(measures.MinValue.Value, minValueLimit);
+        if (measures.MinViewValue != null)
+            minValue = Math.Max(measures.MinViewValue.Value, minValueLimit);
 
-        if (measures.MaxValue != null)
-            maxValue = Math.Min(measures.MaxValue.Value, maxValueLimit);
+        if (measures.MaxViewValue != null)
+            maxValue = Math.Min(measures.MaxViewValue.Value, maxValueLimit);
 
         var currents = new Data(
-            minExp: minExp,
-            maxExp: maxExp,
-            minValue: minValue,
-            maxValue: maxValue);
+            minLog: minLog,
+            maxLog: maxLog,
+            minViewValue: minValue,
+            maxViewValue: maxValue);
 
         var defaults = currents;
 
         var limits = new Data(
-            minExp: _limits.MinExp,
-            maxExp: _limits.MaxExp,
-            minValue: minValueLimit,
-            maxValue: maxValueLimit);
+            minLog: _limits.MinLog,
+            maxLog: _limits.MaxLog,
+            minViewValue: minValueLimit,
+            maxViewValue: maxValueLimit);
 
         try
         {
@@ -252,36 +252,36 @@ internal sealed class Axis
         }
     }
 
-    public Axis WithCoords(double tryMinCoord, double tryMaxCoord)
+    public Axis WithViewCoords(double minViewCoord, double maxViewCoord)
     {
-        if (tryMinCoord == 0 && tryMaxCoord == _maxViewCoord)
+        if (minViewCoord == 0 && maxViewCoord == _maxViewCoord)
             return this;
 
-        var minCoord = tryMinCoord;
-        var maxCoord = tryMaxCoord;
+        var minCoordLimit = _limits.MinViewValue != double.NegativeInfinity ? ValueToCoord(_limits.MinViewValue) : _minCoord;
+        var maxCoordLimit = _limits.MaxViewValue != double.PositiveInfinity ? ValueToCoord(_limits.MaxViewValue) : _maxCoord;
 
-        var minCoordLimit = _limits.MinValue != double.NegativeInfinity ? ValueToCoord_Private(_limits.MinValue) : _negInf_MinCoord;
-        var maxCoordLimit = _limits.MaxValue != double.PositiveInfinity ? ValueToCoord_Private(_limits.MaxValue) : _posInf_MaxCoord;
+        var adjustedMinViewCoord = minViewCoord;
+        var adjustedMaxViewCoord = maxViewCoord;
 
-        if (tryMinCoord < minCoordLimit)
+        if (minViewCoord < minCoordLimit)
         {
-            minCoord = minCoordLimit;
-            maxCoord = Math.Min(tryMaxCoord + (minCoordLimit - tryMinCoord), maxCoordLimit);
+            adjustedMinViewCoord = minCoordLimit;
+            adjustedMaxViewCoord = Math.Min(maxViewCoord + (minCoordLimit - minViewCoord), maxCoordLimit);
         }
-        else if (tryMaxCoord > maxCoordLimit)
+        else if (maxViewCoord > maxCoordLimit)
         {
-            minCoord = Math.Max(tryMinCoord - (tryMaxCoord - maxCoordLimit), minCoordLimit);
-            maxCoord = maxCoordLimit;
+            adjustedMinViewCoord = Math.Max(minViewCoord - (maxViewCoord - maxCoordLimit), minCoordLimit);
+            adjustedMaxViewCoord = maxCoordLimit;
         }
 
-        var minViewValue = CoordToValue(minCoord);
-        var maxViewValue = CoordToValue(maxCoord);
+        var minViewValue = CoordToValue(adjustedMinViewCoord);
+        var maxViewValue = CoordToValue(adjustedMaxViewCoord);
 
         var currents = new Data(
-            minExp: _currents.MinExp,
-            maxExp: _currents.MaxExp,
-            minValue: minViewValue,
-            maxValue: maxViewValue);
+            minLog: _currents.MinLog,
+            maxLog: _currents.MaxLog,
+            minViewValue: minViewValue,
+            maxViewValue: maxViewValue);
 
         try
         {
@@ -298,23 +298,23 @@ internal sealed class Axis
         }
     }
 
-    public Axis WithMinExp(int tryMinExpDiff)
+    public Axis WithMinLogDiff(int minLogDiff)
     {
-        var minExp = _currents.MinExp + tryMinExpDiff;
+        var minLog = _currents.MinLog + minLogDiff;
 
-        if (minExp < _limits.MinExp)
+        if (minLog < _limits.MinLog)
             return this;
 
-        var maxExp = _currents.MaxExp;
+        var maxLog = _currents.MaxLog;
 
-        if (maxExp < minExp)
-            maxExp = minExp;
+        if (maxLog < minLog)
+            maxLog = minLog;
 
         var currents = new Data(
-            minExp: minExp,
-            maxExp: maxExp,
-            minValue: _currents.MinValue,
-            maxValue: _currents.MaxValue);
+            minLog: minLog,
+            maxLog: maxLog,
+            minViewValue: _currents.MinViewValue,
+            maxViewValue: _currents.MaxViewValue);
 
         return new Axis(
             viewAreaSize: _viewAreaSize,
@@ -323,23 +323,23 @@ internal sealed class Axis
             limits: _limits);
     }
 
-    public Axis WithMaxExp(int tryMaxExpDiff)
+    public Axis WithMaxLogDiff(int maxLogDiff)
     {
-        var maxExp = _currents.MaxExp + tryMaxExpDiff;
+        var maxLog = _currents.MaxLog + maxLogDiff;
 
-        if (maxExp > _limits.MaxExp)
+        if (maxLog > _limits.MaxLog)
             return this;
 
-        var minExp = _currents.MinExp;
+        var minLog = _currents.MinLog;
 
-        if (minExp > maxExp)
-            minExp = maxExp;
+        if (minLog > maxLog)
+            minLog = maxLog;
 
         var currents = new Data(
-            minExp: minExp,
-            maxExp: maxExp,
-            minValue: _currents.MinValue,
-            maxValue: _currents.MaxValue);
+            minLog: minLog,
+            maxLog: maxLog,
+            minViewValue: _currents.MinViewValue,
+            maxViewValue: _currents.MaxViewValue);
 
         return new Axis(
             viewAreaSize: _viewAreaSize,
@@ -371,10 +371,10 @@ internal sealed class Axis
 
     #region Conversions
 
-    public int? ValueToCoord(double value)
+    public int? ValueToViewCoord(double value)
     {
         Check(!double.IsNaN(value));
-        var coord = ValueToCoord_Private(value);
+        var coord = ValueToCoord(value);
         var roundedCoord = (int)Math.Round(coord);
 
         if (roundedCoord >= 0 && roundedCoord <= _maxViewCoord)
@@ -383,49 +383,49 @@ internal sealed class Axis
         return null;
     }
 
-    private double ValueToCoord_Private(double value)
+    private double ValueToCoord(double value)
     {
         Debug.Assert(!double.IsNaN(value));
 
         double coord;
 
-        if (value < -_exp_MaxValue)
+        if (value < -_maxLogValue)
         {
             // Negative hyperbolic zone
-            var coordRelative = -_inf_MinValue_Mul_CoordDiff / value;
-            coord = _negInf_MinCoord + coordRelative;
+            var coordRelative = -_maxLogValue_Mul_CoordDiff / value;
+            coord = _minCoord + coordRelative;
         }
-        else if (value < -_linear_MaxValue)
+        else if (value < -_maxLinearValue)
         {
-            // Negative exponential zone
+            // Negative logarithmic zone
             var log = Math.Log10(-value);
-            var logRelative = log - _minLog;
+            var logRelative = log - _minLogDouble;
             var coordRelative = logRelative * _logToCoord;
-            coord = _linear_MinCoord - coordRelative;
+            coord = _minLinearCoord - coordRelative;
         }
-        else if (value <= _linear_MaxValue)
+        else if (value <= _maxLinearValue)
         {
             // Linear zone
-            var valueRelative = value + _linear_MaxValue;
+            var valueRelative = value + _maxLinearValue;
             var coordRelative = valueRelative * _valueToCoord;
-            coord = _linear_MinCoord + coordRelative;
+            coord = _minLinearCoord + coordRelative;
         }
-        else if (value <= _exp_MaxValue)
+        else if (value <= _maxLogValue)
         {
-            // Positive exponential zone
+            // Positive logarithmic zone
             var log = Math.Log10(value);
-            var logRelative = log - _minLog;
+            var logRelative = log - _minLogDouble;
             var coordRelative = logRelative * _logToCoord;
-            coord = _linear_MaxCoord + coordRelative;
+            coord = _maxLinearCoord + coordRelative;
         }
         else
         {
             // Positive hyperbolic zone
-            var coordRelative = _inf_MinValue_Mul_CoordDiff / value;
-            coord = _posInf_MaxCoord - coordRelative;
+            var coordRelative = _maxLogValue_Mul_CoordDiff / value;
+            coord = _maxCoord - coordRelative;
         }
 
-        Debug.Assert(coord >= _negInf_MinCoord && coord <= _posInf_MaxCoord);
+        Debug.Assert(coord >= _minCoord && coord <= _maxCoord);
         return coord;
     }
 
@@ -433,42 +433,42 @@ internal sealed class Axis
     {
         double value;
 
-        if (coord < _negExp_MinCoord)
+        if (coord < _minNegLogCoord)
         {
             // Negative hyperbolic zone
-            if (coord <= _negInf_MinCoord) return double.NegativeInfinity;
-            var coordRelative = coord - _negInf_MinCoord;
-            value = -_inf_MinValue_Mul_CoordDiff / coordRelative;
+            if (coord <= _minCoord) return double.NegativeInfinity;
+            var coordRelative = coord - _minCoord;
+            value = -_maxLogValue_Mul_CoordDiff / coordRelative;
         }
-        else if (coord < _linear_MinCoord)
+        else if (coord < _minLinearCoord)
         {
-            // Negative exponential zone
-            var coordRelative = _linear_MinCoord - coord;
+            // Negative logarithmic zone
+            var coordRelative = _minLinearCoord - coord;
             var logRelative = coordRelative * _coordToLog;
-            var log = _minLog + logRelative;
+            var log = _minLogDouble + logRelative;
             value = -Math.Pow(10, log);
         }
-        else if (coord <= _linear_MaxCoord)
+        else if (coord <= _maxLinearCoord)
         {
             // Linear zone
-            var coordRelative = coord - _linear_MinCoord;
+            var coordRelative = coord - _minLinearCoord;
             var valueRelative = coordRelative * _coordToValue;
-            value = valueRelative - _linear_MaxValue;
+            value = valueRelative - _maxLinearValue;
         }
-        else if (coord <= _posExp_MaxCoord)
+        else if (coord <= _maxPosLogCoord)
         {
-            // Positive exponential zone
-            var coordRelative = coord - _linear_MaxCoord;
+            // Positive logarithmic zone
+            var coordRelative = coord - _maxLinearCoord;
             var logRelative = coordRelative * _coordToLog;
-            var log = _minLog + logRelative;
+            var log = _minLogDouble + logRelative;
             value = Math.Pow(10, log);
         }
         else
         {
             // Positive hyperbolic zone
-            if (coord >= _posInf_MaxCoord) return double.PositiveInfinity;
-            var coordRelative = _posInf_MaxCoord - coord;
-            value = _inf_MinValue_Mul_CoordDiff / coordRelative;
+            if (coord >= _maxCoord) return double.PositiveInfinity;
+            var coordRelative = _maxCoord - coord;
+            value = _maxLogValue_Mul_CoordDiff / coordRelative;
         }
 
         Debug.Assert(!double.IsNaN(value));

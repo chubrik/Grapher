@@ -10,15 +10,15 @@ public sealed class Grapher
 {
     #region Common
 
-    private RenderCtx _renderCtx;
+    private Renderer _renderer;
     private Axis _axisX;
     private Axis _axisY;
 
     public Grapher(PictureBox pictureBox)
     {
-        _renderCtx = new RenderCtx(pictureBox);
-        _axisX = Axis.FromViewAreaSize(_renderCtx.ViewAreaWidth);
-        _axisY = Axis.FromViewAreaSize(_renderCtx.ViewAreaHeight);
+        _renderer = new Renderer(pictureBox);
+        _axisX = Axis.FromViewAreaSize(_renderer.ViewAreaWidth);
+        _axisY = Axis.FromViewAreaSize(_renderer.ViewAreaHeight);
         InitRulers();
     }
 
@@ -33,44 +33,44 @@ public sealed class Grapher
 
     private void Render()
     {
-        _renderCtx = _renderCtx.GetNew();
+        _renderer = _renderer.GetNew();
 
         RenderRulers();
 
-        foreach (var graphJob in _graphJobs)
-            RenderGraph(graphJob);
+        foreach (var graph in _graphs)
+            RenderGraph(graph);
 
-        foreach (var (color, markers) in _markerJobs)
-            RenderMarker(color, markers);
+        foreach (var (color, markers) in _markerGroups)
+            RenderMarkers(color, markers);
 
-        _renderCtx.Apply();
+        _renderer.Apply();
     }
 
-    private readonly struct RenderCtx(PictureBox pictureBox)
+    private readonly struct Renderer(PictureBox pictureBox)
     {
         private const int _paddingSize = 10;
         private readonly Bitmap _bitmap = new(pictureBox.Width, pictureBox.Height);
-        private readonly int _rawMaxY = pictureBox.Height - _paddingSize - 1;
+        private readonly int _nativeMaxY = pictureBox.Height - _paddingSize - 1;
 
-        public int RawMinX => _paddingSize;
-        public int RawMaxX => pictureBox.Width - _paddingSize - 1;
-        public int RawMinY => _paddingSize;
-        public int RawMaxY => _rawMaxY;
+        public int NativeMinX => _paddingSize;
+        public int NativeMaxX => pictureBox.Width - _paddingSize - 1;
+        public int NativeMinY => _paddingSize;
+        public int NativeMaxY => _nativeMaxY;
         public int ViewAreaWidth => pictureBox.Width - _paddingSize * 2;
         public int ViewAreaHeight => pictureBox.Height - _paddingSize * 2;
 
-        public int RawToX(int rawX) => rawX - RawMinX;
-        public int RawToY(int rawY) => _rawMaxY - rawY;
+        public int NativeToViewX(int nativeX) => nativeX - _paddingSize;
+        public int NativeToViewY(int nativeY) => _nativeMaxY - nativeY;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetPixel(int x, int y, Color color)
         {
             Debug.Assert(x >= 0 && x < ViewAreaWidth);
             Debug.Assert(y >= 0 && y < ViewAreaHeight);
-            _bitmap.SetPixel(_paddingSize + x, _rawMaxY - y, color);
+            _bitmap.SetPixel(_paddingSize + x, _nativeMaxY - y, color);
         }
 
-        public RenderCtx GetNew() => new(pictureBox);
+        public Renderer GetNew() => new(pictureBox);
 
         public void Apply()
         {
@@ -102,8 +102,8 @@ public sealed class Grapher
 
     public void OnResize()
     {
-        var isXChanged = SetX(_axisX.WithViewAreaSize(_renderCtx.ViewAreaWidth));
-        var isYChanged = SetY(_axisY.WithViewAreaSize(_renderCtx.ViewAreaHeight));
+        var isXChanged = SetX(_axisX.WithViewAreaSize(_renderer.ViewAreaWidth));
+        var isYChanged = SetY(_axisY.WithViewAreaSize(_renderer.ViewAreaHeight));
 
         if (isXChanged || isYChanged)
             Render();
@@ -124,108 +124,108 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnZoom(bool smooth, bool zoomIn, int? rawX, int? rawY)
+    public void OnZoom(bool smooth, bool zoomIn, int? nativeX, int? nativeY)
     {
         var zoomFactor = zoomIn
             ? 1 / (smooth ? _zoomSmoothFactor : _zoomFactor)
             : smooth ? _zoomSmoothFactor : _zoomFactor;
 
-        var isXChanged = rawX != null && (zoomIn || _axisX.MinCoord < 0 || _axisX.MaxCoord > _axisX.MaxViewCoord);
-        var isYChanged = rawY != null && (zoomIn || _axisY.MinCoord < 0 || _axisY.MaxCoord > _axisY.MaxViewCoord);
+        var isXChanged = nativeX != null && (zoomIn || _axisX.MinCoord < 0 || _axisX.MaxCoord > _axisX.MaxViewCoord);
+        var isYChanged = nativeY != null && (zoomIn || _axisY.MinCoord < 0 || _axisY.MaxCoord > _axisY.MaxViewCoord);
 
         if (isXChanged)
         {
-            var position = _renderCtx.RawToX(NotNull(rawX)) / (double)_axisX.MaxViewCoord;
+            var position = _renderer.NativeToViewX(NotNull(nativeX)) / (double)_axisX.MaxViewCoord;
             if (position < 0) position = 0;
             if (position > 1) position = 1;
-            var newMaxViewX = _axisX.MaxViewCoord * zoomFactor;
-            var newMinX = (_axisX.MaxViewCoord - newMaxViewX) * position;
-            var newMaxX = newMinX + newMaxViewX;
-            isXChanged = SetX(_axisX.WithCoords(newMinX, newMaxX));
+            var zoomedMaxViewX = _axisX.MaxViewCoord * zoomFactor;
+            var newMinViewX = (_axisX.MaxViewCoord - zoomedMaxViewX) * position;
+            var newMaxViewX = newMinViewX + zoomedMaxViewX;
+            isXChanged = SetX(_axisX.WithViewCoords(newMinViewX, newMaxViewX));
         }
 
         if (isYChanged)
         {
-            var position = _renderCtx.RawToY(NotNull(rawY)) / (double)_axisY.MaxViewCoord;
+            var position = _renderer.NativeToViewY(NotNull(nativeY)) / (double)_axisY.MaxViewCoord;
             if (position < 0) position = 0;
             if (position > 1) position = 1;
-            var newMaxViewY = _axisY.MaxViewCoord * zoomFactor;
-            var newMinY = (_axisY.MaxViewCoord - newMaxViewY) * position;
-            var newMaxY = newMinY + newMaxViewY;
-            isYChanged = SetY(_axisY.WithCoords(newMinY, newMaxY));
+            var zoomedMaxViewY = _axisY.MaxViewCoord * zoomFactor;
+            var newMinViewY = (_axisY.MaxViewCoord - zoomedMaxViewY) * position;
+            var newMaxViewY = newMinViewY + zoomedMaxViewY;
+            isYChanged = SetY(_axisY.WithViewCoords(newMinViewY, newMaxViewY));
         }
 
         if (isXChanged || isYChanged)
             Render();
     }
 
-    public void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
-    public void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), rawYDiff: 0);
-    public void OnMoveUp(bool smooth) => OnMove(rawXDiff: 0, (int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
-    public void OnMoveDown(bool smooth) => OnMove(rawXDiff: 0, -(int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    public void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), nativeYDiff: 0);
+    public void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), nativeYDiff: 0);
+    public void OnMoveUp(bool smooth) => OnMove(nativeXDiff: 0, (int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    public void OnMoveDown(bool smooth) => OnMove(nativeXDiff: 0, -(int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
 
-    public void OnMove(int rawXDiff, int rawYDiff)
+    public void OnMove(int nativeXDiff, int nativeYDiff)
     {
-        var isXChanged = rawXDiff != 0 && ((rawXDiff > 0 && _axisX.MinCoord < 0) || (rawXDiff < 0 && _axisX.MaxCoord > _axisX.MaxViewCoord));
-        var isYChanged = rawYDiff != 0 && ((rawYDiff < 0 && _axisY.MinCoord < 0) || (rawYDiff > 0 && _axisY.MaxCoord > _axisY.MaxViewCoord));
+        var isXChanged = nativeXDiff != 0 && ((nativeXDiff > 0 && _axisX.MinCoord < 0) || (nativeXDiff < 0 && _axisX.MaxCoord > _axisX.MaxViewCoord));
+        var isYChanged = nativeYDiff != 0 && ((nativeYDiff < 0 && _axisY.MinCoord < 0) || (nativeYDiff > 0 && _axisY.MaxCoord > _axisY.MaxViewCoord));
 
         if (isXChanged)
         {
-            var minX = -rawXDiff;
-            var maxX = _axisX.MaxViewCoord - rawXDiff;
-            isXChanged = SetX(_axisX.WithCoords(minX, maxX));
+            var minViewX = -nativeXDiff;
+            var maxViewX = _axisX.MaxViewCoord - nativeXDiff;
+            isXChanged = SetX(_axisX.WithViewCoords(minViewX, maxViewX));
         }
 
         if (isYChanged)
         {
-            var minY = rawYDiff;
-            var maxY = _axisY.MaxViewCoord + rawYDiff;
-            isYChanged = SetY(_axisY.WithCoords(minY, maxY));
+            var minViewY = nativeYDiff;
+            var maxViewY = _axisY.MaxViewCoord + nativeYDiff;
+            isYChanged = SetY(_axisY.WithViewCoords(minViewY, maxViewY));
         }
 
         if (isXChanged || isYChanged)
             Render();
     }
 
-    public void OnRangeX(int rawMinX, int rawMaxX) => OnRange(rawMinX, rawMaxX, _renderCtx.RawMinY, _renderCtx.RawMaxY);
-    public void OnRangeY(int rawMinY, int rawMaxY) => OnRange(_renderCtx.RawMinX, _renderCtx.RawMaxX, rawMinY, rawMaxY);
+    public void OnRangeX(int nativeMinX, int nativeMaxX) => OnRange(nativeMinX, nativeMaxX, _renderer.NativeMinY, _renderer.NativeMaxY);
+    public void OnRangeY(int nativeMinY, int nativeMaxY) => OnRange(_renderer.NativeMinX, _renderer.NativeMaxX, nativeMinY, nativeMaxY);
 
-    public void OnRange(int rawMinX, int rawMaxX, int rawMinY, int rawMaxY)
+    public void OnRange(int nativeMinX, int nativeMaxX, int nativeMinY, int nativeMaxY)
     {
-        if (rawMinX == rawMaxX || rawMinY == rawMaxY)
+        if (nativeMinX == nativeMaxX || nativeMinY == nativeMaxY)
             return;
 
-        var minX = _renderCtx.RawToX(rawMinX);
-        var maxX = _renderCtx.RawToX(rawMaxX);
-        var minY = _renderCtx.RawToY(rawMaxY);
-        var maxY = _renderCtx.RawToY(rawMinY);
+        var minViewX = _renderer.NativeToViewX(nativeMinX);
+        var maxViewX = _renderer.NativeToViewX(nativeMaxX);
+        var minViewY = _renderer.NativeToViewY(nativeMaxY);
+        var maxViewY = _renderer.NativeToViewY(nativeMinY);
 
-        var isXChanged = SetX(_axisX.WithCoords(minX, maxX));
-        var isYChanged = SetY(_axisY.WithCoords(minY, maxY));
-
-        if (isXChanged || isYChanged)
-            Render();
-    }
-
-    public void OnMinExp(int xDiff, int yDiff)
-    {
-        Check(xDiff >= -1 && xDiff <= 1);
-        Check(yDiff >= -1 && yDiff <= 1);
-
-        var isXChanged = xDiff != 0 && SetX(_axisX.WithMinExp(xDiff));
-        var isYChanged = yDiff != 0 && SetY(_axisY.WithMinExp(yDiff));
+        var isXChanged = SetX(_axisX.WithViewCoords(minViewX, maxViewX));
+        var isYChanged = SetY(_axisY.WithViewCoords(minViewY, maxViewY));
 
         if (isXChanged || isYChanged)
             Render();
     }
 
-    public void OnMaxExp(int xDiff, int yDiff)
+    public void OnMinLogDiff(int xLogDiff, int yLogDiff)
     {
-        Check(xDiff >= -1 && xDiff <= 1);
-        Check(yDiff >= -1 && yDiff <= 1);
+        Check(xLogDiff >= -1 && xLogDiff <= 1);
+        Check(yLogDiff >= -1 && yLogDiff <= 1);
 
-        var isXChanged = xDiff != 0 && SetX(_axisX.WithMaxExp(xDiff));
-        var isYChanged = yDiff != 0 && SetY(_axisY.WithMaxExp(yDiff));
+        var isXChanged = xLogDiff != 0 && SetX(_axisX.WithMinLogDiff(xLogDiff));
+        var isYChanged = yLogDiff != 0 && SetY(_axisY.WithMinLogDiff(yLogDiff));
+
+        if (isXChanged || isYChanged)
+            Render();
+    }
+
+    public void OnMaxLogDiff(int xLogDiff, int yLogDiff)
+    {
+        Check(xLogDiff >= -1 && xLogDiff <= 1);
+        Check(yLogDiff >= -1 && yLogDiff <= 1);
+
+        var isXChanged = xLogDiff != 0 && SetX(_axisX.WithMaxLogDiff(xLogDiff));
+        var isYChanged = yLogDiff != 0 && SetY(_axisY.WithMaxLogDiff(yLogDiff));
 
         if (isXChanged || isYChanged)
             Render();
@@ -299,7 +299,7 @@ public sealed class Grapher
         var y = x % 2 == 0 ? 2 : 1;
 
         for (; y < _axisY.MaxViewCoord; y += 2)
-            _renderCtx.SetPixel(x, y, color);
+            _renderer.SetPixel(x, y, color);
     }
 
     private void RenderYRuler(int y, Color color)
@@ -307,7 +307,7 @@ public sealed class Grapher
         var x = y % 2 == 0 ? 0 : 1;
 
         for (; x <= _axisX.MaxViewCoord; x += 2)
-            _renderCtx.SetPixel(x, y, color);
+            _renderer.SetPixel(x, y, color);
     }
 
     #endregion
@@ -315,23 +315,25 @@ public sealed class Grapher
     #region Graphs
 
     private const double _ligaBright = 0.4;
-    private readonly List<GraphJob> _graphJobs = [];
+    private readonly List<Graph> _graphs = [];
 
     public void AddGraph(Func<double, double> calculate, Color? color = null)
     {
-        _graphJobs.Add(new(calculate, GraphType.Default, color ?? Color.White));
+        var graph = new Graph(calculate, GraphType.Default, color ?? Color.White);
+        _graphs.Add(graph);
     }
 
     public void AddGraphInteger(Func<double, double> calculate, Color? color = null)
     {
-        _graphJobs.Add(new(calculate, GraphType.Integer, color ?? Color.White));
+        var graph = new Graph(calculate, GraphType.Integer, color ?? Color.White);
+        _graphs.Add(graph);
     }
 
-    private void RenderGraph(GraphJob graphJob)
+    private void RenderGraph(Graph graph)
     {
-        var color = graphJob.Color;
-        var calculate = graphJob.Calculate;
-        var isIntegerType = graphJob.Type == GraphType.Integer;
+        var color = graph.Color;
+        var calculate = graph.Calculate;
+        var isIntegerType = graph.Type == GraphType.Integer;
 
         var ligaColor = Color.FromArgb(
             (int)(color.R * _ligaBright), (int)(color.G * _ligaBright), (int)(color.B * _ligaBright));
@@ -340,9 +342,9 @@ public sealed class Grapher
         var prevX = -1;
         var prevY = -1;
 
-        var useCache = graphJob.InsVersion == _insVersion;
-        var cachedOuts = useCache ? graphJob.CachedOuts : graphJob.CachedOuts = new double[_ins.Length];
-        graphJob.InsVersion = _insVersion;
+        var useCache = graph.InsVersion == _insVersion;
+        var cachedOuts = useCache ? graph.CachedOuts : graph.CachedOuts = new double[_ins.Length];
+        graph.InsVersion = _insVersion;
 
         for (var x = 0; x < _ins.Length; x++)
         {
@@ -373,7 +375,7 @@ public sealed class Grapher
 
             if (!double.IsNaN(@out))
             {
-                var y = _axisY.ValueToCoord(@out);
+                var y = _axisY.ValueToViewCoord(@out);
 
                 if (y != null)
                 {
@@ -392,7 +394,7 @@ public sealed class Grapher
     {
         Debug.Assert(x >= 0 && x <= _axisX.MaxViewCoord);
         Debug.Assert(y >= 0 && y <= _axisY.MaxViewCoord);
-        _renderCtx.SetPixel(x, y, color);
+        _renderer.SetPixel(x, y, color);
 
         // Liga
 
@@ -407,7 +409,7 @@ public sealed class Grapher
             var yStep = (y - prevY) / (float)xDiff;
 
             for (var i = 2; i < xDiff - 1; i += 2)
-                _renderCtx.SetPixel(prevX + i, prevY + (int)MathF.Round(yStep * i), ligaColor);
+                _renderer.SetPixel(prevX + i, prevY + (int)MathF.Round(yStep * i), ligaColor);
         }
         else
         {
@@ -415,10 +417,10 @@ public sealed class Grapher
 
             if (y > prevY)
                 for (var i = 2; i < yDiffAbs - 1; i += 2)
-                    _renderCtx.SetPixel(prevX + (int)MathF.Floor(xStep * i), prevY + i, ligaColor);
+                    _renderer.SetPixel(prevX + (int)MathF.Floor(xStep * i), prevY + i, ligaColor);
             else
                 for (var i = 2; i < yDiffAbs - 1; i += 2)
-                    _renderCtx.SetPixel(prevX + (int)MathF.Ceiling(xStep * i), prevY - i, ligaColor);
+                    _renderer.SetPixel(prevX + (int)MathF.Ceiling(xStep * i), prevY - i, ligaColor);
         }
     }
 
@@ -426,9 +428,9 @@ public sealed class Grapher
 
     #region Markers
 
-    private readonly List<(Color color, IReadOnlyList<InOut> markers)> _markerJobs = [];
+    private readonly List<(Color Color, IReadOnlyList<InOut> Markers)> _markerGroups = [];
 
-    private void RenderMarker(Color color, IReadOnlyList<InOut> markers)
+    private void RenderMarkers(Color color, IReadOnlyList<InOut> markers)
     {
         throw new NotImplementedException();
     }

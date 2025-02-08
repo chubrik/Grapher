@@ -12,8 +12,8 @@ Zoom to selected                Right drag-n-drop
 Smooth              Shift       Right
 X axis only         Ctrl
 Y axis only         Alt
-Set max exponent    K L
-Set min exponent    < >
+Set max logarithm   K L
+Set min logarithm   < >
 Set as default      Enter
 Reset to default    Esc
 
@@ -118,19 +118,19 @@ internal partial class Form : System.Windows.Forms.Form
                 break;
 
             case Keys.K:
-                _grapher.OnMaxExp(_onlyY ? 0 : -1, _onlyX ? 0 : -1);
+                _grapher.OnMaxLogDiff(_onlyY ? 0 : -1, _onlyX ? 0 : -1);
                 break;
 
             case Keys.L:
-                _grapher.OnMaxExp(_onlyY ? 0 : 1, _onlyX ? 0 : 1);
+                _grapher.OnMaxLogDiff(_onlyY ? 0 : 1, _onlyX ? 0 : 1);
                 break;
 
             case Keys.Oemcomma: // <
-                _grapher.OnMinExp(_onlyY ? 0 : -1, _onlyX ? 0 : -1);
+                _grapher.OnMinLogDiff(_onlyY ? 0 : -1, _onlyX ? 0 : -1);
                 break;
 
             case Keys.OemPeriod: // >
-                _grapher.OnMinExp(_onlyY ? 0 : 1, _onlyX ? 0 : 1);
+                _grapher.OnMinLogDiff(_onlyY ? 0 : 1, _onlyX ? 0 : 1);
                 break;
         }
     }
@@ -189,8 +189,8 @@ internal partial class Form : System.Windows.Forms.Form
 
                 if (_isWaitingMouseUp)
                     _grapher.OnMove(
-                        _onlyY ? 0 : e.X - _mouseDownX,
-                        _onlyX ? 0 : e.Y - _mouseDownY);
+                        nativeXDiff: _onlyY ? 0 : e.X - _mouseDownX,
+                        nativeYDiff: _onlyX ? 0 : e.Y - _mouseDownY);
 
                 break;
 
@@ -199,18 +199,18 @@ internal partial class Form : System.Windows.Forms.Form
 
                 if (_isWaitingMouseUp)
                 {
-                    var minX = Math.Min(e.X, _mouseDownX);
-                    var maxX = Math.Max(e.X, _mouseDownX);
-                    var minY = Math.Min(e.Y, _mouseDownY);
-                    var maxY = Math.Max(e.Y, _mouseDownY);
+                    var nativeMinX = Math.Min(e.X, _mouseDownX);
+                    var nativeMaxX = Math.Max(e.X, _mouseDownX);
+                    var nativeMinY = Math.Min(e.Y, _mouseDownY);
+                    var nativeMaxY = Math.Max(e.Y, _mouseDownY);
 
                     if (_onlyX)
-                        _grapher.OnRangeX(minX, maxX);
+                        _grapher.OnRangeX(nativeMinX, nativeMaxX);
                     else
                     if (_onlyY)
-                        _grapher.OnRangeY(minY, maxY);
+                        _grapher.OnRangeY(nativeMinY, nativeMaxY);
                     else
-                        _grapher.OnRange(minX, maxX, minY, maxY);
+                        _grapher.OnRange(nativeMinX, nativeMaxX, nativeMinY, nativeMaxY);
                 }
 
                 break;
@@ -248,7 +248,7 @@ internal partial class Form : System.Windows.Forms.Form
         _grapher.OnZoom(
             smooth: Smooth,
             zoomIn: zoomIn,
-            rawX: _onlyY ? null : _mousePosX != -1 ? _mousePosX : PictureBox.Width / 2,
-            rawY: _onlyX ? null : _mousePosY != -1 ? _mousePosY : PictureBox.Height / 2);
+            nativeX: _onlyY ? null : _mousePosX != -1 ? _mousePosX : PictureBox.Width / 2,
+            nativeY: _onlyX ? null : _mousePosY != -1 ? _mousePosY : PictureBox.Height / 2);
     }
 }
