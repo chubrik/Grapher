@@ -7,6 +7,9 @@ internal sealed class Axis
 {
     #region Common
 
+    private static readonly double _log10E = Math.Log10(Math.E); // 0.43429448190325182
+    private static readonly double _antiLog10E = 1 / _log10E;    // 2.3025850929940459
+
     private readonly int _viewAreaSize;
     private readonly int _maxViewCoord;
     private readonly Data _currents;
@@ -49,34 +52,34 @@ internal sealed class Axis
         _defaults = defaults;
         _limits = limits;
 
-        var maxLinearValue = Math.Pow(10, _currents.MinLog);
-        var maxLogValue = Math.Pow(10, _currents.MaxLog);
+        var maxLinearValue = Math.Pow(10, currents.MinLog);
+        var maxLogValue = Math.Pow(10, currents.MaxLog);
 
-        _minLogDouble = _currents.MinLog;
+        _minLogDouble = currents.MinLog;
         _maxLinearValue = maxLinearValue;
         _maxLogValue = maxLogValue;
 
         // Pre Init
 
-        var eMulLogDiff = Math.E * (_currents.MaxLog - _currents.MinLog);
+        var preLogZoneSize = _antiLog10E * (currents.MaxLog - currents.MinLog);
 
-        _minCoord /* */ = -2 - eMulLogDiff;
-        _minNegLogCoord = -1 - eMulLogDiff;
+        _minCoord /* */ = -2 - preLogZoneSize;
+        _minNegLogCoord = -1 - preLogZoneSize;
         _minLinearCoord = -1;
         _maxLinearCoord = 1;
-        _maxPosLogCoord = 1 + eMulLogDiff;
-        _maxCoord /* */ = 2 + eMulLogDiff;
+        _maxPosLogCoord = 1 + preLogZoneSize;
+        _maxCoord /* */ = 2 + preLogZoneSize;
 
         _valueToCoord = 1 / maxLinearValue;
         _coordToValue = maxLinearValue;
-        _logToCoord = Math.E;
-        _coordToLog = 1 / Math.E;
+        _logToCoord = _antiLog10E;
+        _coordToLog = _log10E;
         _maxLogValue_Mul_CoordDiff = _maxLogValue;
 
         // Pre Calc
 
-        var preMinViewCoord = ValueToCoord(_currents.MinViewValue);
-        var preMaxViewCoord = ValueToCoord(_currents.MaxViewValue);
+        var preMinViewCoord = ValueToCoord(currents.MinViewValue);
+        var preMaxViewCoord = ValueToCoord(currents.MaxViewValue);
         Check(preMinViewCoord >= _minCoord);
         Check(preMaxViewCoord <= _maxCoord);
         Check(preMinViewCoord < preMaxViewCoord);
@@ -104,13 +107,13 @@ internal sealed class Axis
     public bool Equals(Axis other)
     {
         if (_viewAreaSize != other._viewAreaSize) return false;
-        if (_currents != other._currents) return false;
-        if (_defaults != other._defaults) return false;
-        if (_limits != other._limits) return false;
+        if (!_currents.Equals(other._currents)) return false;
+        if (!_defaults.Equals(other._defaults)) return false;
+        if (!_limits.Equals(other._limits)) return false;
         return true;
     }
 
-    public readonly struct Data
+    private readonly struct Data
     {
         public readonly int MinLog;
         public readonly int MaxLog;
@@ -137,18 +140,14 @@ internal sealed class Axis
             return true;
         }
 
-        public static bool operator ==(Data left, Data right)
+        public bool Equals(Data other)
         {
-            if (left.MinLog != right.MinLog) return false;
-            if (left.MaxLog != right.MaxLog) return false;
-            if (left.MinViewValue != right.MinViewValue) return false;
-            if (left.MaxViewValue != right.MaxViewValue) return false;
+            if (MinLog != other.MinLog) return false;
+            if (MaxLog != other.MaxLog) return false;
+            if (MinViewValue != other.MinViewValue) return false;
+            if (MaxViewValue != other.MaxViewValue) return false;
             return true;
         }
-
-        public static bool operator !=(Data left, Data right) => !(left == right);
-        public override bool Equals(object? obj) => obj is Data data && this == data;
-        public override int GetHashCode() => HashCode.Combine(MinLog, MaxLog, MinViewValue, MaxViewValue);
     }
 
     #endregion
@@ -158,7 +157,7 @@ internal sealed class Axis
     public static Axis FromViewAreaSize(int viewAreaSize)
     {
         const int initMinLog = 0;
-        const int initMaxLog = 6;
+        const int initMaxLog = 3;
         const int constAbsLogLimit = 300;
 
         var currents = new Data(
@@ -184,30 +183,18 @@ internal sealed class Axis
 
     public Axis WithMeasures(Measures measures)
     {
-        var minLog = _currents.MinLog;
-        var maxLog = _currents.MaxLog;
-        var minValue = _currents.MinViewValue;
-        var maxValue = _currents.MaxViewValue;
+        var minLog = measures.MinLog ?? _currents.MinLog;
+        var maxLog = measures.MaxLog ?? _currents.MaxLog;
+        var minViewValue = measures.MinViewValue ?? _currents.MinViewValue;
+        var maxViewValue = measures.MaxViewValue ?? _currents.MaxViewValue;
         var minValueLimit = measures.MinValueLimit ?? _limits.MinViewValue;
         var maxValueLimit = measures.MaxValueLimit ?? _limits.MaxViewValue;
 
-        if (measures.MinLog != null)
-            minLog = Math.Max(measures.MinLog.Value, _limits.MinLog);
-
-        if (measures.MaxLog != null)
-            maxLog = Math.Min(measures.MaxLog.Value, _limits.MaxLog);
-
-        if (measures.MinViewValue != null)
-            minValue = Math.Max(measures.MinViewValue.Value, minValueLimit);
-
-        if (measures.MaxViewValue != null)
-            maxValue = Math.Min(measures.MaxViewValue.Value, maxValueLimit);
-
         var currents = new Data(
-            minLog: minLog,
-            maxLog: maxLog,
-            minViewValue: minValue,
-            maxViewValue: maxValue);
+            minLog: Math.Max(minLog, _limits.MinLog),
+            maxLog: Math.Min(maxLog, _limits.MaxLog),
+            minViewValue: Math.Max(minViewValue, minValueLimit),
+            maxViewValue: Math.Min(maxViewValue, maxValueLimit));
 
         var defaults = currents;
 
@@ -257,8 +244,8 @@ internal sealed class Axis
         if (minViewCoord == 0 && maxViewCoord == _maxViewCoord)
             return this;
 
-        var minCoordLimit = _limits.MinViewValue != double.NegativeInfinity ? ValueToCoord(_limits.MinViewValue) : _minCoord;
-        var maxCoordLimit = _limits.MaxViewValue != double.PositiveInfinity ? ValueToCoord(_limits.MaxViewValue) : _maxCoord;
+        var minCoordLimit = ValueToCoord(_limits.MinViewValue);
+        var maxCoordLimit = ValueToCoord(_limits.MaxViewValue);
 
         var adjustedMinViewCoord = minViewCoord;
         var adjustedMaxViewCoord = maxViewCoord;
@@ -280,8 +267,8 @@ internal sealed class Axis
         var currents = new Data(
             minLog: _currents.MinLog,
             maxLog: _currents.MaxLog,
-            minViewValue: minViewValue,
-            maxViewValue: maxViewValue);
+            minViewValue: Math.Max(minViewValue, _limits.MinViewValue),
+            maxViewValue: Math.Min(maxViewValue, _limits.MaxViewValue));
 
         try
         {
@@ -305,10 +292,7 @@ internal sealed class Axis
         if (minLog < _limits.MinLog)
             return this;
 
-        var maxLog = _currents.MaxLog;
-
-        if (maxLog < minLog)
-            maxLog = minLog;
+        var maxLog = Math.Max(minLog, _currents.MaxLog);
 
         var currents = new Data(
             minLog: minLog,
@@ -330,10 +314,7 @@ internal sealed class Axis
         if (maxLog > _limits.MaxLog)
             return this;
 
-        var minLog = _currents.MinLog;
-
-        if (minLog > maxLog)
-            minLog = maxLog;
+        var minLog = Math.Min(_currents.MinLog, maxLog);
 
         var currents = new Data(
             minLog: minLog,
@@ -355,7 +336,7 @@ internal sealed class Axis
 
     public Axis WithDefaults()
     {
-        if (_currents == _defaults)
+        if (_defaults.Equals(_currents))
             return this;
 
         var currents = _defaults;
@@ -373,14 +354,16 @@ internal sealed class Axis
 
     public int? ValueToViewCoord(double value)
     {
-        Check(!double.IsNaN(value));
+        if (double.IsNaN(value))
+            return null;
+
         var coord = ValueToCoord(value);
         var roundedCoord = (int)Math.Round(coord);
 
-        if (roundedCoord >= 0 && roundedCoord <= _maxViewCoord)
-            return roundedCoord;
+        if ((uint)roundedCoord > _maxViewCoord)
+            return null;
 
-        return null;
+        return roundedCoord;
     }
 
     private double ValueToCoord(double value)

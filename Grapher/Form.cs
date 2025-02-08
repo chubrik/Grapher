@@ -6,9 +6,9 @@ using System.Runtime.InteropServices;
 
 Action              Keyboard    Mouse
 
-Move                WASD ←↑↓→   Left drag-n-drop
-Zoom                R F  + -    Wheel rotate
-Zoom to selected                Right drag-n-drop
+Zoom                Q E  - +    Wheel rotate
+Zoom to selected                Left drag-n-drop
+Move                WASD ←↑↓→   Right drag-n-drop
 Smooth              Shift       Right
 X axis only         Ctrl
 Y axis only         Alt
@@ -99,12 +99,12 @@ internal partial class Form : System.Windows.Forms.Form
                 _grapher.OnMoveRight(Smooth);
                 break;
 
-            case Keys.R:
+            case Keys.E:
             case Keys.Oemplus:
                 OnZoom(zoomIn: true);
                 break;
 
-            case Keys.F:
+            case Keys.Q:
             case Keys.OemMinus:
                 OnZoom(zoomIn: false);
                 break;
@@ -188,16 +188,6 @@ internal partial class Form : System.Windows.Forms.Form
                 _isLeftMouseButtonPressed = false;
 
                 if (_isWaitingMouseUp)
-                    _grapher.OnMove(
-                        nativeXDiff: _onlyY ? 0 : e.X - _mouseDownX,
-                        nativeYDiff: _onlyX ? 0 : e.Y - _mouseDownY);
-
-                break;
-
-            case MouseButtons.Right:
-                _isRightMouseButtonPressed = false;
-
-                if (_isWaitingMouseUp)
                 {
                     var nativeMinX = Math.Min(e.X, _mouseDownX);
                     var nativeMaxX = Math.Max(e.X, _mouseDownX);
@@ -214,13 +204,23 @@ internal partial class Form : System.Windows.Forms.Form
                 }
 
                 break;
+
+            case MouseButtons.Right:
+                _isRightMouseButtonPressed = false;
+
+                if (_isWaitingMouseUp)
+                    _grapher.OnMove(
+                        nativeXDiff: _onlyY ? 0 : e.X - _mouseDownX,
+                        nativeYDiff: _onlyX ? 0 : e.Y - _mouseDownY);
+
+                break;
         }
 
         _isWaitingMouseUp = false;
     }
 
-    private int _mousePosX = -1;
-    private int _mousePosY = -1;
+    private int? _mousePosX = null;
+    private int? _mousePosY = null;
 
     private void PictureBox_MouseMove(object sender, MouseEventArgs e)
     {
@@ -230,8 +230,8 @@ internal partial class Form : System.Windows.Forms.Form
 
     private void PictureBox_MouseLeave(object sender, EventArgs e)
     {
-        _mousePosX = -1;
-        _mousePosY = -1;
+        _mousePosX = null;
+        _mousePosY = null;
     }
 
     private void PictureBox_Wheel(object sender, MouseEventArgs e)
@@ -245,10 +245,12 @@ internal partial class Form : System.Windows.Forms.Form
 
     private void OnZoom(bool zoomIn)
     {
+        _isWaitingMouseUp = false;
+
         _grapher.OnZoom(
             smooth: Smooth,
             zoomIn: zoomIn,
-            nativeX: _onlyY ? null : _mousePosX != -1 ? _mousePosX : PictureBox.Width / 2,
-            nativeY: _onlyX ? null : _mousePosY != -1 ? _mousePosY : PictureBox.Height / 2);
+            nativeX: _onlyY ? null : _mousePosX ?? PictureBox.Width / 2,
+            nativeY: _onlyX ? null : _mousePosY ?? PictureBox.Height / 2);
     }
 }

@@ -14,7 +14,7 @@ public sealed class Grapher
     private Axis _axisX;
     private Axis _axisY;
 
-    public Grapher(PictureBox pictureBox)
+    internal Grapher(PictureBox pictureBox)
     {
         _renderer = new Renderer(pictureBox);
         _axisX = Axis.FromViewAreaSize(_renderer.ViewAreaWidth);
@@ -52,25 +52,17 @@ public sealed class Grapher
         private readonly Bitmap _bitmap = new(pictureBox.Width, pictureBox.Height);
         private readonly int _nativeMaxY = pictureBox.Height - _paddingSize - 1;
 
-        public int NativeMinX => _paddingSize;
+        public const int NativeMinX = _paddingSize;
+        public const int NativeMinY = _paddingSize;
         public int NativeMaxX => pictureBox.Width - _paddingSize - 1;
-        public int NativeMinY => _paddingSize;
         public int NativeMaxY => _nativeMaxY;
         public int ViewAreaWidth => pictureBox.Width - _paddingSize * 2;
         public int ViewAreaHeight => pictureBox.Height - _paddingSize * 2;
 
-        public int NativeToViewX(int nativeX) => nativeX - _paddingSize;
-        public int NativeToViewY(int nativeY) => _nativeMaxY - nativeY;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetPixel(int x, int y, Color color)
+        public Renderer GetNew()
         {
-            Debug.Assert(x >= 0 && x < ViewAreaWidth);
-            Debug.Assert(y >= 0 && y < ViewAreaHeight);
-            _bitmap.SetPixel(_paddingSize + x, _nativeMaxY - y, color);
+            return new Renderer(pictureBox);
         }
-
-        public Renderer GetNew() => new(pictureBox);
 
         public void Apply()
         {
@@ -78,13 +70,51 @@ public sealed class Grapher
             pictureBox.Image = _bitmap;
             oldImage?.Dispose();
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void RenderPixel(int viewX, int viewY, Color color)
+        {
+            _bitmap.SetPixel(ViewToNativeX(viewX), ViewToNativeY(viewY), color);
+        }
+
+        #region Conversions
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int NativeToViewX(int nativeX)
+        {
+            Debug.Assert(nativeX >= 0 && nativeX < pictureBox.Width);
+            return nativeX - _paddingSize;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int NativeToViewY(int nativeY)
+        {
+            Debug.Assert(nativeY >= 0 && nativeY < pictureBox.Height);
+            return _nativeMaxY - nativeY;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int ViewToNativeX(int viewX)
+        {
+            Debug.Assert(viewX >= 0 && viewX < ViewAreaWidth);
+            return _paddingSize + viewX;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int ViewToNativeY(int viewY)
+        {
+            Debug.Assert(viewY >= 0 && viewY < ViewAreaHeight);
+            return _nativeMaxY - viewY;
+        }
+
+        #endregion
     }
 
     #endregion
 
     #region Navigation
 
-    private const double _zoomFactor = 2;
+    private static readonly double _zoomFactor = Math.Pow(10, 0.25); // 1.7782794100389228
     private const double _moveFactor = 0.25;
     private const double _smoothFactor = 0.1;
     private const double _moveSmoothFactor = _moveFactor * _smoothFactor;
@@ -100,7 +130,7 @@ public sealed class Grapher
         SetY(_axisY.WithMeasures(measuresY));
     }
 
-    public void OnResize()
+    internal void OnResize()
     {
         var isXChanged = SetX(_axisX.WithViewAreaSize(_renderer.ViewAreaWidth));
         var isYChanged = SetY(_axisY.WithViewAreaSize(_renderer.ViewAreaHeight));
@@ -109,13 +139,13 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnSetAsDefault()
+    internal void OnSetAsDefault()
     {
         _axisX.SetAsDefaults();
         _axisY.SetAsDefaults();
     }
 
-    public void OnReset()
+    internal void OnReset()
     {
         var isXChanged = SetX(_axisX.WithDefaults());
         var isYChanged = SetY(_axisY.WithDefaults());
@@ -124,7 +154,7 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnZoom(bool smooth, bool zoomIn, int? nativeX, int? nativeY)
+    internal void OnZoom(bool smooth, bool zoomIn, int? nativeX, int? nativeY)
     {
         var zoomFactor = zoomIn
             ? 1 / (smooth ? _zoomSmoothFactor : _zoomFactor)
@@ -159,12 +189,12 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), nativeYDiff: 0);
-    public void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), nativeYDiff: 0);
-    public void OnMoveUp(bool smooth) => OnMove(nativeXDiff: 0, (int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
-    public void OnMoveDown(bool smooth) => OnMove(nativeXDiff: 0, -(int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    internal void OnMoveLeft(bool smooth) => OnMove((int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), nativeYDiff: 0);
+    internal void OnMoveRight(bool smooth) => OnMove(-(int)Math.Round(_axisX.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)), nativeYDiff: 0);
+    internal void OnMoveUp(bool smooth) => OnMove(nativeXDiff: 0, (int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
+    internal void OnMoveDown(bool smooth) => OnMove(nativeXDiff: 0, -(int)Math.Round(_axisY.MaxViewCoord * (smooth ? _moveSmoothFactor : _moveFactor)));
 
-    public void OnMove(int nativeXDiff, int nativeYDiff)
+    internal void OnMove(int nativeXDiff, int nativeYDiff)
     {
         var isXChanged = nativeXDiff != 0 && ((nativeXDiff > 0 && _axisX.MinCoord < 0) || (nativeXDiff < 0 && _axisX.MaxCoord > _axisX.MaxViewCoord));
         var isYChanged = nativeYDiff != 0 && ((nativeYDiff < 0 && _axisY.MinCoord < 0) || (nativeYDiff > 0 && _axisY.MaxCoord > _axisY.MaxViewCoord));
@@ -187,10 +217,10 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnRangeX(int nativeMinX, int nativeMaxX) => OnRange(nativeMinX, nativeMaxX, _renderer.NativeMinY, _renderer.NativeMaxY);
-    public void OnRangeY(int nativeMinY, int nativeMaxY) => OnRange(_renderer.NativeMinX, _renderer.NativeMaxX, nativeMinY, nativeMaxY);
+    internal void OnRangeX(int nativeMinX, int nativeMaxX) => OnRange(nativeMinX, nativeMaxX, Renderer.NativeMinY, _renderer.NativeMaxY);
+    internal void OnRangeY(int nativeMinY, int nativeMaxY) => OnRange(Renderer.NativeMinX, _renderer.NativeMaxX, nativeMinY, nativeMaxY);
 
-    public void OnRange(int nativeMinX, int nativeMaxX, int nativeMinY, int nativeMaxY)
+    internal void OnRange(int nativeMinX, int nativeMaxX, int nativeMinY, int nativeMaxY)
     {
         if (nativeMinX == nativeMaxX || nativeMinY == nativeMaxY)
             return;
@@ -207,7 +237,7 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnMinLogDiff(int xLogDiff, int yLogDiff)
+    internal void OnMinLogDiff(int xLogDiff, int yLogDiff)
     {
         Check(xLogDiff >= -1 && xLogDiff <= 1);
         Check(yLogDiff >= -1 && yLogDiff <= 1);
@@ -219,7 +249,7 @@ public sealed class Grapher
             Render();
     }
 
-    public void OnMaxLogDiff(int xLogDiff, int yLogDiff)
+    internal void OnMaxLogDiff(int xLogDiff, int yLogDiff)
     {
         Check(xLogDiff >= -1 && xLogDiff <= 1);
         Check(yLogDiff >= -1 && yLogDiff <= 1);
@@ -236,32 +266,32 @@ public sealed class Grapher
 
     private bool SetX(Axis axisX)
     {
-        if (axisX.Equals(_axisX))
+        if (_axisX.Equals(axisX))
             return false;
 
         _axisX = axisX;
         _insVersion++;
 
-        if (_ins.Length != _axisX.ViewAreaSize)
-            _ins = new double[_axisX.ViewAreaSize];
+        if (_ins.Length != axisX.ViewAreaSize)
+            _ins = new double[axisX.ViewAreaSize];
 
-        for (var x = 0; x < _ins.Length; x++)
+        for (var x = 0; x <= axisX.MaxViewCoord; x++)
         {
-            var @in = _axisX.CoordToValue(x);
-            if (@in < _axisX.MinValueLimit) @in = _axisX.MinValueLimit;
-            if (@in > _axisX.MaxValueLimit) @in = _axisX.MaxValueLimit;
+            var @in = axisX.CoordToValue(x);
+            if (@in < axisX.MinValueLimit) @in = axisX.MinValueLimit;
+            if (@in > axisX.MaxValueLimit) @in = axisX.MaxValueLimit;
             _ins[x] = @in;
         }
 
         return true;
     }
 
-    private bool SetY(Axis axisX)
+    private bool SetY(Axis axisY)
     {
-        if (axisX.Equals(_axisY))
+        if (_axisY.Equals(axisY))
             return false;
 
-        _axisY = axisX;
+        _axisY = axisY;
         return true;
     }
 
@@ -299,7 +329,7 @@ public sealed class Grapher
         var y = x % 2 == 0 ? 2 : 1;
 
         for (; y < _axisY.MaxViewCoord; y += 2)
-            _renderer.SetPixel(x, y, color);
+            _renderer.RenderPixel(x, y, color);
     }
 
     private void RenderYRuler(int y, Color color)
@@ -307,14 +337,14 @@ public sealed class Grapher
         var x = y % 2 == 0 ? 0 : 1;
 
         for (; x <= _axisX.MaxViewCoord; x += 2)
-            _renderer.SetPixel(x, y, color);
+            _renderer.RenderPixel(x, y, color);
     }
 
     #endregion
 
     #region Graphs
 
-    private const double _ligaBright = 0.4;
+    private const float _ligaBright = 0.4f;
     private readonly List<Graph> _graphs = [];
 
     public void AddGraph(Func<double, double> calculate, Color? color = null)
@@ -373,28 +403,23 @@ public sealed class Grapher
                 cachedOuts[x] = @out;
             }
 
-            if (!double.IsNaN(@out))
-            {
-                var y = _axisY.ValueToViewCoord(@out);
+            var y = _axisY.ValueToViewCoord(@out);
 
-                if (y != null)
-                {
-                    RenderGraphPoint(x, y.Value, color, prevX, prevY, ligaColor);
-                    prevX = x;
-                    prevY = y.Value;
-                    continue;
-                }
+            if (y == null)
+            {
+                prevX = -1;
+                continue;
             }
 
-            prevX = -1;
+            RenderGraphPoint(x, y.Value, color, prevX, prevY, ligaColor);
+            prevX = x;
+            prevY = y.Value;
         }
     }
 
     private void RenderGraphPoint(int x, int y, Color color, int prevX, int prevY, Color ligaColor)
     {
-        Debug.Assert(x >= 0 && x <= _axisX.MaxViewCoord);
-        Debug.Assert(y >= 0 && y <= _axisY.MaxViewCoord);
-        _renderer.SetPixel(x, y, color);
+        _renderer.RenderPixel(x, y, color);
 
         // Liga
 
@@ -402,25 +427,25 @@ public sealed class Grapher
             return;
 
         var xDiff = x - prevX;
-        var yDiffAbs = Math.Abs(y - prevY);
+        var yAbsDiff = Math.Abs(y - prevY);
 
-        if (xDiff > yDiffAbs)
+        if (xDiff > yAbsDiff)
         {
             var yStep = (y - prevY) / (float)xDiff;
 
             for (var i = 2; i < xDiff - 1; i += 2)
-                _renderer.SetPixel(prevX + i, prevY + (int)MathF.Round(yStep * i), ligaColor);
+                _renderer.RenderPixel(prevX + i, prevY + (int)MathF.Floor(yStep * i), ligaColor);
         }
         else
         {
-            var xStep = xDiff / (float)yDiffAbs;
+            var xStep = xDiff / (float)yAbsDiff;
 
             if (y > prevY)
-                for (var i = 2; i < yDiffAbs - 1; i += 2)
-                    _renderer.SetPixel(prevX + (int)MathF.Floor(xStep * i), prevY + i, ligaColor);
+                for (var i = 2; i < yAbsDiff - 1; i += 2)
+                    _renderer.RenderPixel(prevX + (int)MathF.Ceiling(xStep * i), prevY + i, ligaColor);
             else
-                for (var i = 2; i < yDiffAbs - 1; i += 2)
-                    _renderer.SetPixel(prevX + (int)MathF.Ceiling(xStep * i), prevY - i, ligaColor);
+                for (var i = 2; i < yAbsDiff - 1; i += 2)
+                    _renderer.RenderPixel(prevX + (int)MathF.Floor(xStep * i), prevY - i, ligaColor);
         }
     }
 
