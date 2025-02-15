@@ -368,7 +368,7 @@ internal sealed class Axis
     {
         var viewCoord = (int)Math.Round(coord);
 
-        if ((uint)viewCoord > _maxViewCoord)
+        if (unchecked((uint)viewCoord) > _maxViewCoord)
             return null;
 
         return viewCoord;
@@ -470,12 +470,12 @@ internal sealed class Axis
 
     #region Rulers
 
-    private const double _rulersMinCoordStepForDeep = 50;
+    private const double _rulersMinCoordStepForDeep = 20;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public IEnumerable<Ruler> GetVisibleRulers()
     {
-        return GetAllRulers().Where(x => x.IsVisible());
+        return GetAllRulers().Where(x => x.IsVisible);
     }
 
     private List<Ruler> GetAllRulers()
@@ -484,39 +484,86 @@ internal sealed class Axis
         var minViewValue = _currents.MinViewValue;
         var maxViewValue = _currents.MaxViewValue;
 
-        // Если на экране бо́льшую часть занимают отрицательные значения,
-        // переворачиваем видимую область, чтобы направить вычисления в положительную сторону.
-        if (Math.Abs(minViewValue) > Math.Abs(maxViewValue))
-            (minViewValue, maxViewValue) = (-maxViewValue, -minViewValue);
+        var isPositive = Math.Abs(minViewValue) <= maxViewValue;
+        var isZeroVisible = minViewValue <= 0 && maxViewValue >= 0;
 
-        if (minViewValue < 0 && maxViewValue > 0) // Ноль в видимой области
+        if (isZeroVisible)
         {
-            var positiveRulers = new List<Ruler>();
-            var zeroRuler = Ruler.FromRelativeCoord(this, value: 0, relativeCoord: _minCoord);
-            var isMaxLinearValueVisible = _maxLinearValue < maxViewValue;
-
-            var maxLinearValue = isMaxLinearValueVisible
-                ? _maxLinearValue
-                : Math.Pow(10, Math.Ceiling(Math.Log10(maxViewValue)));
-
-            var linearMaxRuler = zeroRuler.GetRelative(maxLinearValue);
-            var linearStep = maxLinearValue * 0.1;
-            var linearRulers = GetLinearRulers(from: zeroRuler, to: linearMaxRuler, initStep: linearStep);
-            positiveRulers.AddRange(linearRulers);
-
-            if (isMaxLinearValueVisible) // Верхняя граница линейной зоны в видимой области
-            {
-                // Проходимся по порядку по каждому сегменту логарифмической зоны.
-                // Сохраняем каждую границу как линейку 1 уровня.
-                // По пути запускаем рекурсии 2 уровня, в каждом сегменте значение в 10 раз больше.
-                // (Для гиперполической зоны рекурсия особая.)
-            }
-
-            rulers.Add(zeroRuler);
-            rulers.AddRange(positiveRulers);
-            rulers.AddRange(positiveRulers.Select(x => x.GetNegative())); // Применяем отрицательные значения
-            return rulers;
+            if (isPositive)
+                minViewValue = 0;
+            else
+                maxViewValue = 0;
         }
+        else
+        {
+            var viewValueCoeff = isPositive
+                ? maxViewValue / minViewValue
+                : minViewValue / maxViewValue;
+
+            if (viewValueCoeff <= 2)
+            {
+                var linearRulers = GetLinearRulers(minViewValue, maxViewValue);
+                rulers.AddRange(linearRulers);
+                return rulers;
+            }
+        }
+
+        var isLinearVisible = minViewValue < _maxLinearValue && maxViewValue > -_maxLinearValue;
+
+        if (isLinearVisible)
+        {
+            var minLinearValue = Math.Max(minViewValue, -_maxLinearValue);
+            var maxLinearValue = Math.Min(maxViewValue, _maxLinearValue);
+            var linearRulers = GetLinearRulers(minLinearValue, maxLinearValue);
+            rulers.AddRange(linearRulers);
+        }
+
+        // ...
+        var logRulers1 = GetLogRulers(log: 0, isPositive: true);
+        var logRulers2 = GetLogRulers(log: 1, isPositive: true);
+        var logRulers3 = GetLogRulers(log: 2, isPositive: true);
+        rulers.AddRange(logRulers1);
+        rulers.AddRange(logRulers2);
+        rulers.AddRange(logRulers3);
+
+        if (isZeroVisible)
+        {
+            var zeroRuler = Ruler.FromRelativeCoord(this, value: 0, relativeCoord: _minCoord);
+            var oppositeRulers = rulers.Select(x => x.GetNegative()).ToList();
+            rulers.Add(zeroRuler);
+            rulers.AddRange(oppositeRulers);
+        }
+
+        //var isFlipped = !isPositive && isZeroVisible;
+
+        //// Если на экране преобладают отрицательные значения, переворачиваем границы видимой области,
+        //// чтобы вычисления всегда были направлены в положительную сторону.
+        //if (isFlipped)
+        //    (minViewValue, maxViewValue) = (-maxViewValue, -minViewValue);
+
+        //// Если ноль в видимой области
+        //if (minViewValue < 0 && maxViewValue > 0)
+        //{
+        //    var positiveRulers = new List<Ruler>();
+
+        //    var linearRulers = GetLinearRulers(0, Math.Min(maxViewValue, _maxLinearValue));
+        //    positiveRulers.AddRange(linearRulers);
+
+        //    // Если логарифмическая зона в видимой области
+        //    if (_maxLinearValue <= maxViewValue)
+        //    {
+        //        // Проходимся по порядку по каждому сегменту логарифмической зоны.
+        //        // Сохраняем каждую границу как линейку 1 уровня.
+        //        // По пути запускаем рекурсии 2 уровня, в каждом сегменте значение в 10 раз больше.
+        //        // (Для гиперполической зоны рекурсия особая.)
+        //    }
+
+        //    var zeroRuler = Ruler.FromRelativeCoord(this, value: 0, relativeCoord: _minCoord);
+        //    rulers.Add(zeroRuler);
+        //    rulers.AddRange(positiveRulers);
+        //    rulers.AddRange(positiveRulers.Select(x => x.GetNegative())); // Копируем в отрицательную сторону
+        //    return rulers;
+        //}
         // Ноль не в видимой области
 
         // Определяем, с какой стороны абсолютное значение больше, и используем это направление для дальнейших расчётов.
@@ -545,43 +592,128 @@ internal sealed class Axis
         return rulers;
     }
 
-    private List<Ruler> GetLinearRulers(Ruler from, Ruler to, double initStep)
+    private List<Ruler> GetLogRulers(int log, bool isPositive)
     {
-        var rulers = new List<Ruler>();
-        var needDeep = to.Coord - from.Coord >= _rulersMinCoordStepForDeep;
-        var step = initStep;
+        Check(log >= _currents.MinLog && log < _currents.MaxLog);
 
-        while (needDeep)
+        var fromValue = isPositive ? Math.Pow(10, log) : -Math.Pow(10, log);
+        var toValue = fromValue * 10;
+        var toAbsValue = Math.Abs(toValue);
+        var step = fromValue;
+
+        var rulers = new List<Ruler>();
+        var to = Ruler.FromWeight(this, toValue, weight: 1); // todo
+        var from = to.GetRelative(fromValue);
+        var prev = from;
+
+        var count = 0;
+
+        for (var value = from.Value + step; Math.Abs(value) <= toAbsValue; value += step)
+        {
+            rulers.Add(prev);
+
+            var ruler = ++count == 4
+                ? to.GetRelative(value)
+                : prev.GetRelative(value);
+
+            var needDeeper = Math.Abs(ruler.Coord - prev.Coord) >= _rulersMinCoordStepForDeep;
+
+            if (needDeeper)
+            {
+                var deepRulers = isPositive
+                    ? GetLinearRulers(minValue: prev.Value, maxValue: value)
+                    : GetLinearRulers(minValue: value, maxValue: prev.Value);
+
+                rulers.AddRange(deepRulers);
+            }
+
+            prev = ruler;
+        }
+
+        return rulers;
+    }
+
+    private List<Ruler> GetLinearRulers(double minValue, double maxValue)
+    {
+        Check(minValue < maxValue);
+
+        var step = Math.Pow(10, Math.Ceiling(Math.Log10(maxValue - minValue)));
+        var alignedMinValue = Math.Floor(minValue / step) * step;
+        var alignedMaxValue = Math.Ceiling(maxValue / step) * step;
+        var min = Ruler.FromWeight(this, alignedMinValue, weight: 1); // todo
+        var max = Ruler.FromWeight(this, alignedMaxValue, weight: 1); // todo
+
+        return GetLinearRulers(min: min, max: max, step: step);
+    }
+
+    private List<Ruler> GetLinearRulers(Ruler min, Ruler max, double step)
+    {
+        Check(min.Value < max.Value);
+
+        var min_ = min;
+        var max_ = max;
+        var step_ = step;
+
+        var rulers = new List<Ruler>();
+        var needDeeper = true;
+
+        while (needDeeper)
         {
             var count = 0;
-            needDeep = false;
-            var weight = 0f;
+            var weight1 = 0f;
+            var weight5 = 0f;
+            var nextMin = min_;
+            var each1 = true;
 
-            for (var value = from.Value + step; value < to.Value; value += step)
+            for (var value = min_.Value + step_; value < max_.Value; value += step_)
             {
-                if (++count % 10 == 0)
+                count++;
+
+                if (count % 10 == 0)
                     continue;
 
                 Ruler ruler;
+                var needToAdd = true;
 
                 if (count == 1)
                 {
-                    ruler = from.GetRelative(value);
-                    weight = ruler.Weight;
+                    ruler = min_.GetRelative(value);
+                    weight1 = ruler.Weight;
 
-                    if (weight == 0)
+                    if (weight1 == 0)
                         break;
 
-                    if (ruler.Coord - from.Coord >= _rulersMinCoordStepForDeep)
-                        needDeep = true;
-                }
-                else
-                    ruler = Ruler.FromWeight(this, value, weight: weight);
+                    needDeeper = ruler.Coord - min_.Coord >= _rulersMinCoordStepForDeep;
+                    each1 = ruler.Coord - min_.Coord >= _rulersMinCoordStepForDeep / 2;
 
-                rulers.Add(ruler);
+                    if (!each1)
+                        continue;
+                }
+                else if (count % 5 == 0)
+                    ruler = Ruler.FromWeight(this, value, weight: weight5);
+                else
+                {
+                    ruler = Ruler.FromWeight(this, value, weight: weight1);
+                    needToAdd = each1;
+
+                    if (count == (each1 ? 3 : 2))
+                        weight5 = min_.GetRelative(value).Weight;
+                }
+
+                if (ruler.Coord <= -0.5)
+                    nextMin = ruler;
+                else
+                if (ruler.Coord >= _maxViewCoord + 0.5)
+                {
+                    max_ = ruler;
+                    break;
+                }
+                else if (needToAdd)
+                    rulers.Add(ruler);
             }
 
-            step *= 0.1;
+            min_ = nextMin;
+            step_ *= 0.1;
         }
 
         return rulers;
@@ -606,8 +738,7 @@ internal sealed class Axis
             ViewCoord = axis.CoordToViewCoord(coord) ?? -1;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsVisible() => ViewCoord != -1;
+        public bool IsVisible => ViewCoord != -1;
 
         public Ruler GetRelative(double value)
         {
@@ -624,7 +755,7 @@ internal sealed class Axis
         public static Ruler FromRelativeCoord(Axis axis, double value, double relativeCoord)
         {
             var coord = axis.ValueToCoord(value);
-            var weight = MathF.Min((float)(coord - relativeCoord) / axis._maxViewCoord, 1);
+            var weight = MathF.Min((float)Math.Abs(coord - relativeCoord) / axis._maxViewCoord, 1);
             return new Ruler(axis, value: value, coord: coord, weight: weight);
         }
 

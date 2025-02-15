@@ -78,12 +78,11 @@ public sealed class Grapher
             _bitmap.SetPixel(ViewToNativeX(viewX), ViewToNativeY(viewY), color);
         }
 
-        public void RenderRulerNumber(double number, int viewX, int viewY, Color color)
+        public void RenderNumber(double number, int viewX, int viewY, Color color)
         {
             var nativeX = ViewToNativeX(viewX);
             var nativeY = ViewToNativeY(viewY);
-            var bright = Math.Min(color.R * 2, 255);
-            var brush = new SolidBrush(Color.FromArgb(bright, bright, bright));
+            var brush = new SolidBrush(color);
             var text = number.ToString(number > -10000 && number < 10000 ? "0.###############" : "0.############### e0");
 
             // https://stackoverflow.com/a/6311628/7254784
@@ -318,7 +317,7 @@ public sealed class Grapher
 
     #region Rulers
 
-    private const int _rulerMaxBright = 96;
+    private const int _rulerMaxBright = 128;
     private static readonly Dictionary<float, Color> _rulerWeightToColor = [];
     private static readonly Font _rulerFont = new("Tahoma", 8);
 
@@ -330,11 +329,14 @@ public sealed class Grapher
         {
             rulers.Add((xRuler, () =>
             {
-                var color = GetRulerColor(xRuler.Weight);
-                RenderXRuler(xRuler.ViewCoord, color);
+                var rulerColor = GetRulerColor(xRuler.Weight);
+                var numberBright = Math.Min(rulerColor.R * 2, 255);
+                var numberColor = Color.FromArgb(numberBright, numberBright, numberBright);
+
+                RenderXRuler(xRuler.ViewCoord, rulerColor);
 
                 if (xRuler.Weight > 0.03f)
-                    _renderer.RenderRulerNumber(xRuler.Value, xRuler.ViewCoord, 0, color);
+                    _renderer.RenderNumber(xRuler.Value, xRuler.ViewCoord, 0, numberColor);
             }
             ));
         }
@@ -343,11 +345,14 @@ public sealed class Grapher
         {
             rulers.Add((yRuler, () =>
             {
-                var color = GetRulerColor(yRuler.Weight);
-                RenderYRuler(yRuler.ViewCoord, color);
+                var rulerColor = GetRulerColor(yRuler.Weight);
+                var numberBright = Math.Min(rulerColor.R * 2, 255);
+                var numberColor = Color.FromArgb(numberBright, numberBright, numberBright);
+
+                RenderYRuler(yRuler.ViewCoord, rulerColor);
 
                 if (yRuler.Weight > 0.03f)
-                    _renderer.RenderRulerNumber(yRuler.Value, 0, yRuler.ViewCoord, color);
+                    _renderer.RenderNumber(yRuler.Value, 0, yRuler.ViewCoord, numberColor);
             }
             ));
         }
